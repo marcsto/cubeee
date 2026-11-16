@@ -32,6 +32,12 @@ function rotate(v, axis, angle) {
   return add(add(scale(v, cosine), scale(cross(axis, v), Math.sin(angle))), scale(axis, dot(axis, v) * (1 - cosine)));
 }
 
+function rotateByQuaternion(v, [x, y, z, w]) {
+  const axis = [x, y, z];
+  const offset = scale(cross(axis, v), 2);
+  return add(add(v, scale(offset, w)), cross(axis, offset));
+}
+
 function surface(center, across, down, size) {
   return [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([x, y]) => add(center, add(scale(across, x * size), scale(down, y * size))));
 }
@@ -177,6 +183,7 @@ export class CubeView {
   pitch = 0.48;
   zoom = 1;
   frame = 0;
+  orientationFrame = 0;
   targetSlots = [];
 
   constructor(canvas, { compact = false, followArrows = true } = {}) {
@@ -203,6 +210,23 @@ export class CubeView {
   destroy() {
     this.observer.disconnect();
     cancelAnimationFrame(this.frame);
+    cancelAnimationFrame(this.orientationFrame);
+  }
+
+  setOrientation(orientation) {
+    if (this.orientation === orientation) return;
+    if (!this.orientation || !orientation) this.referenceOrientation = orientation;
+    this.orientation = orientation;
+    if (this.orientationFrame) return;
+    this.orientationFrame = requestAnimationFrame(() => {
+      this.orientationFrame = 0;
+      if (!this.animation) this.paint();
+    });
+  }
+
+  resetView(face) {
+    this.referenceOrientation = this.orientation;
+    this.focusFace(face);
   }
 
   focusFace(face) {
@@ -272,7 +296,13 @@ export class CubeView {
   }
 
   camera() {
-    return cameraAt(this.yaw, this.pitch);
+    const camera = cameraAt(this.yaw, this.pitch);
+    if (!this.orientation) return camera;
+    // Use the inverse of the cube's relative rotation to keep projecting in cube coordinates.
+    const [x, y, z, w] = this.orientation;
+    const inverse = [-x, -y, -z, w];
+    const toCube = v => rotateByQuaternion(rotateByQuaternion(v, this.referenceOrientation), inverse);
+    return { toward: toCube(camera.toward), right: toCube(camera.right), up: toCube(camera.up) };
   }
 
   paint() {

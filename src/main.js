@@ -130,6 +130,7 @@ const bluetooth = new BluetoothCube({
     }
     trainer.turn(move, local, device);
   },
+  orientation: updateCubeOrientation,
   error: showNotice,
   address: askAddress,
   async addressStore(deviceName) {
@@ -327,7 +328,21 @@ function renderConnection() {
        <span class="key-separator"></span><button class="key" data-modifier="prime" title="Counterclockwise (Shift)" aria-label="Counterclockwise modifier" aria-pressed="${modifier === "'"}">′</button><button class="key" data-modifier="double" title="Half turn (Alt)" aria-label="Half-turn modifier" aria-pressed="${modifier === '2'}">2</button>
        </div><button class="settings-link" data-action="help" title="Keyboard shortcuts" aria-label="Keyboard shortcuts">${icon('CircleHelp')}</button>`;
   hydrate($('#cube-input'));
+  updateCubeOrientation();
   return statusChanged;
+}
+
+function updateCubeOrientation() {
+  const orientation = trainer === virtualTrainer && bluetooth.status === 'connected' ? bluetooth.orientation : undefined;
+  const tracking = Boolean(orientation);
+  if (tracking !== Boolean(live.orientation)) {
+    $('#cube-grip').hidden = tracking;
+    $('#cube-rotation').hidden = !tracking;
+    const button = $('[data-action="camera"]');
+    button.setAttribute('aria-label', tracking ? 'Align cube view' : 'Reset cube view');
+    button.title = tracking ? 'Hold white down and green facing you, then align the cube view' : 'Reset cube view';
+  }
+  live.setOrientation(orientation);
 }
 
 function setModifier(value) {
@@ -925,6 +940,7 @@ function showHelp() {
   openDialog('Cube controls', `<p>Hold the training cube with white down and green facing you. Keep this orientation as you follow the setup.</p><ul>
     <li>To wake the GAN i4, turn its white face. Open this site in Chrome or Edge and choose <strong>Connect GAN i4</strong>.</li>
     <li>Choose <strong>Virtual cube</strong> in F2L Practice to load each case on screen. Watch the screen and use your connected cube to turn.</li>
+    <li>With the gyroscope on, the virtual cube follows whole-cube rotations. Hold white down and green facing you, then choose <strong>Align cube view</strong> to recenter it.</li>
     <li>With the GAN disconnected, press U, R, F, D, L, or B to turn a face. Hold Shift for a counterclockwise turn or Alt for a half turn. Use Enter to apply the next guided turn.</li>
     <li>Drag either cube to see its other faces.</li>
     <li>In Cross + F2L, the solve starts on the first turn. For each pair, thinking runs from the previous split to your next turn. Two consecutive quarter turns in the same direction count as one half turn.</li>
@@ -1097,7 +1113,7 @@ function openPreview(scope, start, moves, choice, targets, hint = false) {
 }
 
 const action = {
-  camera: () => live.focusFace(trainer.expected?.[0]),
+  camera: () => live.resetView(trainer.expected?.[0]),
   'find-pair': () => live.focusTargets(),
   help: showHelp,
   account: accountAction,

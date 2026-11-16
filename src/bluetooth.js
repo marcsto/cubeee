@@ -1,5 +1,5 @@
 import { connectGanCube } from 'gan-web-bluetooth';
-import { ganMove, ganState, validFacelets } from './cube.js';
+import { ganMove, ganOrientation, ganState, validFacelets } from './cube.js';
 
 export function normalizeAddress(value) {
   if (typeof value !== 'string') return '';
@@ -135,6 +135,11 @@ export class BluetoothCube {
       }
       this.lastSerial = serial;
       this.callbacks.turn(ganMove(event.move), event.localTimestamp ?? event.timestamp, event.cubeTimestamp);
+    } else if (event.type === 'GYRO') {
+      const orientation = ganOrientation(event.quaternion);
+      if (!orientation) return;
+      this.orientation = orientation;
+      this.callbacks.orientation();
     } else if (event.type === 'BATTERY') {
       this.battery = event.batteryLevel;
       this.callbacks.change();
@@ -147,6 +152,7 @@ export class BluetoothCube {
     this.conn = null;
     this.status = 'disconnected';
     this.battery = undefined;
+    this.orientation = undefined;
     if (this.waiting) this.waiting(new Error('Bluetooth connection closed.'));
     this.callbacks.change();
     if (connection && close) await connection.disconnect().catch(() => {});

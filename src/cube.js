@@ -101,3 +101,10 @@ export function ganState(facelets) {
   const rotated = Cube.fromString(facelets).move('z2').asString();
   return Cube.fromString([...rotated].map(face => whiteDown[face]).join(''));
 }
+
+export function ganOrientation({ x, y, z, w } = {}) {
+  const norm = Math.hypot(x, y, z, w);
+  if (!Number.isFinite(norm) || !norm) return;
+  // The gyro's red, blue, and white axes are −X, −Z, and −Y in the trainer.
+  return [-x / norm, -z / norm, -y / norm, w / norm];
+}
