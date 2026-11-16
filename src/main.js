@@ -4,11 +4,12 @@ import '@fontsource/space-mono/latin-700.css';
 import './style.css';
 import { Activity, ArrowRight, Bluetooth, Box, Check, ChevronDown, ChevronLeft, ChevronRight, CircleAlert, CircleHelp, Clock, History, Keyboard, LayoutGrid, Move, Pause, Play, RefreshCw, RotateCcw, Scan, Star, Target, UserRound, Zap, X, createElement } from 'lucide';
 import { ActivityHistory, recentLimit, restoreReport, savedAttempt, savedReport } from './activity.js';
-import { crossSolved, faces, invert, played, slotFaces, slotSolved, slots, solved } from './cube.js';
+import { algorithmMoveCount, crossSolved, faces, invert, isCubeRotation, played, slotFaces, slotSolved, slots, solved, turnFace } from './cube.js';
+import { cubeSkillsGuide, cubeSkillsSolutions } from './cubeskills.js';
 import { caseThumbnail, CubeView } from './cube-view.js';
 import { BluetoothCube, normalizeAddress } from './bluetooth.js';
 import { FullSolve } from './full-solve.js';
-import { frontColors, getGrip, gripMove } from './grip.js';
+import { canonicalCube, frontColors, getGrip, gripMove } from './grip.js';
 import { caseGroups, practiceDays, PracticeOrder } from './practice-order.js';
 import { planPair } from './planner.js';
 import { matchesPieces, phasePieces, pieceState } from './solve-session.js';
@@ -72,7 +73,7 @@ const trainer = new Trainer(update, result => {
     slots: [0],
     start: trainer.caseStart.asString(),
     assisted: Boolean(trainer.solveLog.assisted),
-    bestKnownMoves: Math.min(...trainer.item.solutions.map(solution => solution.length)),
+    bestKnownMoves: Math.min(...trainer.item.solutions.map(algorithmMoveCount)),
   }));
 });
 
@@ -439,8 +440,16 @@ function practiceSolutionsMarkup() {
   const grip = solutionGrip(item);
   return `<p class="phase-copy">Select a solution to save it as preferred and watch it on the cube.</p>
     ${gripMarkup(grip)}
-    <div class="solutions" role="group" aria-label="Suggested solutions">${item.solutions.map((moves, index) => `<button class="solution" data-solution="${index}" id="practice-solution-${index}" aria-pressed="${(preview?.choice ?? preferred) === index}">${icon(index === preferred ? 'Star' : 'Play')}<code>${gripNotation(moves, grip)}</code><small>${moves.length} turns${index === preferred ? ' · Preferred' : ''}</small></button>`).join('')}</div>
+    <div class="solutions" role="group" aria-label="Suggested solutions">${item.solutions.map((moves, index) => {
+      const credit = item.cubeSkills.has(moves.join(' ')) ? ' · CubeSkills' : '';
+      return `<button class="solution" data-solution="${index}" id="practice-solution-${index}" aria-pressed="${(preview?.choice ?? preferred) === index}">${icon(index === preferred ? 'Star' : 'Play')}<code>${gripNotation(moves, grip)}</code><small>${algorithmMoveCount(moves)} turns${credit}${index === preferred ? ' · Preferred' : ''}</small></button>`;
+    }).join('')}</div>
+    ${item.cubeSkills.size ? cubeSkillsCredit() : ''}
     ${preview?.scope === 'practice' ? walkthroughMarkup() : ''}`;
+}
+
+function cubeSkillsCredit() {
+  return `<p class="algorithm-credit"><a href="${cubeSkillsGuide}" target="_blank" rel="noopener">CubeSkills F2L guide</a> · Opening U turns are aligned to the case.</p>`;
 }
 
 function gripNotation(moves, grip) {
@@ -602,7 +611,7 @@ function preferredSolution(context) {
   const value = activity.preferences[key];
   const choice = typeof value === 'number' || Array.isArray(value) ? value : value?.choice;
   const valid = isCase ? Number.isInteger(choice) && context.solutions[choice]
-    : Array.isArray(choice) && choice.length > 0 && choice.every(move => typeof move === 'string' && /^[URFDLB][2']?$/.test(move));
+    : Array.isArray(choice) && choice.length > 0 && choice.every(move => typeof move === 'string' && /^[URFDLBurfdlbxyz][2']?$/.test(move));
   return { key, choice: valid ? choice : undefined, grip: getGrip(valid ? value?.grip : undefined) };
 }
 
@@ -614,13 +623,18 @@ function fullSolutions(step) {
   const { analysis } = step;
   const preferred = preferredSolution(step).choice ?? [];
   const preferredText = preferred.join(' ');
-  const options = (analysis?.solutions ?? []).map((moves, index) => ({
+  const computed = analysis?.solutions ?? [];
+  const guide = step.slots.length === 1 ? cubeSkillsSolutions(step.start, step.end, step.slots[0], step.targetSlots) : [];
+  const fromGuide = new Set(guide.map(moves => moves.join(' ')));
+  const candidates = new Map([...computed, ...guide].map(moves => [moves.join(' '), moves]));
+  const options = [...candidates].map(([text, moves], index) => ({
     moves,
-    label: analysis.optimal && moves.length === analysis.solutions[0].length ? 'Optimal' : index === 0 ? 'Best found' : 'Alternative',
-    preferred: moves.join(' ') === preferredText,
+    label: index < computed.length ? (analysis.optimal && moves.length === computed[0].length ? 'Optimal' : index === 0 ? 'Best found' : 'Alternative') : '',
+    preferred: text === preferredText,
+    cubeSkills: fromGuide.has(text),
   }));
   if (preferred.length && !options.some(option => option.preferred) &&
-      matchesPieces(played(step.start, preferred), step.end, phasePieces(step.targetSlots))) {
+      matchesPieces(canonicalCube(played(step.start, preferred)), step.end, phasePieces(step.targetSlots))) {
     options.push({ moves: preferred, label: 'Saved', preferred: true });
   }
   return options;
@@ -629,12 +643,15 @@ function fullSolutions(step) {
 function fullSolutionsMarkup(step) {
   const options = fullSolutions(step);
   const grip = solutionGrip(step);
-  const notice = step.analysis === null ? 'Finding solutions that restore the cross and earlier pairs.'
-    : options.length ? 'Select a solution to save it as preferred and watch it on the cube.' : 'Solution comparison is unavailable for this split.';
+  const notice = options.length ? 'Select a solution to save it as preferred and watch it on the cube.'
+    : step.analysis === null ? 'Finding solutions that restore the cross and earlier pairs.' : 'Solution comparison is unavailable for this split.';
   return `<p class="phase-copy">${notice}</p>
-    ${options.length ? `${gripMarkup(grip)}<div class="solutions" role="group" aria-label="Suggested solutions">${options.map(({ moves, label, preferred }, index) =>
-      `<button class="solution" data-full-solution="${index}" id="full-solution-${index}" aria-pressed="${preview?.context === step && preview.choice === moves.join(' ')}">${icon(preferred ? 'Star' : 'Play')}<code>${gripNotation(moves, grip)}</code><small>${moves.length} moves · ${label}${preferred ? ' · Preferred' : ''}</small></button>`
+    ${options.length ? `${gripMarkup(grip)}<div class="solutions" role="group" aria-label="Suggested solutions">${options.map(({ moves, label, preferred, cubeSkills }, index) => {
+      const details = [`${algorithmMoveCount(moves)} moves`, label, cubeSkills && 'CubeSkills', preferred && 'Preferred'].filter(Boolean);
+      return `<button class="solution" data-full-solution="${index}" id="full-solution-${index}" aria-pressed="${preview?.context === step && preview.choice === moves.join(' ')}">${icon(preferred ? 'Star' : 'Play')}<code>${gripNotation(moves, grip)}</code><small>${details.join(' · ')}</small></button>`;
+    }
     ).join('')}</div>` : ''}
+    ${options.some(option => option.cubeSkills) ? cubeSkillsCredit() : ''}
     ${preview?.scope === 'full' ? walkthroughMarkup() : ''}`;
 }
 
@@ -891,9 +908,11 @@ function updatePreview(transition) {
   const cube = played(preview.start, [...moves.slice(0, index), ...grip.rotation]);
   const animation = transition && { before: played(transition.before, grip.rotation), move: gripMove(transition.move, grip) };
   demo.show(cube, next, animation);
-  $('#demo-progress').textContent = next
-    ? `${index} / ${moves.length} · Next ${showMove(next)} (${stickerNames[moves[index][0]]})`
-    : `Complete · ${index} turns`;
+  const face = turnFace(next);
+  const moveScope = !next ? '' : isCubeRotation(next) ? 'whole cube'
+    : face !== next[0] ? `${faceNames[face]} two layers` : stickerNames[faces[cube.center[faces.indexOf(face)]]];
+  $('#demo-progress').textContent = next ? `${index} / ${moves.length} · Next ${showMove(next)} (${moveScope})`
+    : `Complete · ${algorithmMoveCount(moves)} turns`;
   $('[data-action="demo-back"]').disabled = index === 0;
   $('[data-action="demo-forward"]').disabled = index === moves.length;
   const play = $('#demo-play');

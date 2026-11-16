@@ -1,5 +1,6 @@
 import catalogue from './cases.json' with { type: 'json' };
-import { Cube, f2lPattern, f2lSolved, invert, played, restoredPair, simplify, slotSolved, turnPower } from './cube.js';
+import { Cube, f2lPattern, f2lSolved, invert, played, restoredPair, simplify, slotSolved, solved, turnPower } from './cube.js';
+import { cubeSkillsSolutions } from './cubeskills.js';
 import { planRoute } from './planner.js';
 import { RecordedTurns } from './solve-session.js';
 
@@ -7,7 +8,9 @@ export const cases = catalogue.map(item => {
   const setup = item.setup.split(' ');
   const start = played(new Cube(), setup);
   const preserve = [1, 2, 3].filter(slot => slotSolved(start, slot));
-  return { ...item, setup, start, pattern: f2lPattern(start), preserve, solutions: item.solutions.map(text => text.split(' ')) };
+  const guide = new Set(cubeSkillsSolutions(start, solved, 0, [0, ...preserve]).map(moves => moves.join(' ')));
+  const solutions = [...new Set([...item.solutions, ...guide])].map(text => text.split(' '));
+  return { ...item, setup, start, pattern: f2lPattern(start), preserve, solutions, cubeSkills: guide };
 });
 
 export class Trainer {

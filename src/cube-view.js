@@ -1,4 +1,4 @@
-import { faces, slotFaces, turnPower } from './cube.js';
+import { faces, isCubeRotation, slotFaces, turnFace, turnPower } from './cube.js';
 
 const axes = {
   U: [[0, 1, 0], [1, 0, 0], [0, 0, 1]],
@@ -8,7 +8,7 @@ const axes = {
   L: [[-1, 0, 0], [0, 0, 1], [0, -1, 0]],
   B: [[0, 0, -1], [-1, 0, 0], [0, -1, 0]],
 };
-const rotationAxes = { x: axes.R[0], y: axes.U[0], z: axes.F[0] };
+const isWideTurn = move => /^[urfdlb]/.test(move ?? '');
 
 const palette = {
   U: ['#fff65b', '#e7dc1c'], R: ['#ff9062', '#eb673e'],
@@ -56,13 +56,13 @@ function cameraAt(yaw, pitch) {
   return { toward: [sy * cp, sp, cy * cp], right: [cy, 0, -sy], up: [-sy * sp, cp, -cy * sp] };
 }
 
-function drawCube(context, state, camera, project, { animation, highlighted, guideLayer, markers } = {}) {
+function drawCube(context, state, camera, project, { animation, highlighted, guideLayer, wideGuide, markers } = {}) {
   const polygons = [];
   for (const piece of pieces) {
-    const active = animation && (animation.wholeCube || dot(piece, animation.axis) === 1);
+    const active = animation && (animation.wholeCube || dot(piece, animation.axis) >= (animation.wide ? 0 : 1));
     const transform = v => active ? rotate(v, animation.axis, animation.angle) : v;
     const muted = highlighted && !highlighted.some(target => target.every((value, index) => value === piece[index]));
-    const guide = guideLayer && dot(piece, guideLayer) === 1;
+    const guide = guideLayer && dot(piece, guideLayer) >= (wideGuide ? 0 : 1);
     const key = piece.join(',');
     const targetPiece = markers?.pieces.has(key);
     const targetSlot = !animation && markers?.slots.has(key);
@@ -246,12 +246,11 @@ export class CubeView {
     this.cube = cube;
     this.state = cube.asString();
     this.arrow = arrow;
-    if (this.followArrows && arrow && previousArrow?.[0] !== arrow[0]) this.revealFace(arrow[0]);
+    if (this.followArrows && arrow && previousArrow?.[0] !== arrow[0]) this.revealFace(turnFace(arrow));
     cancelAnimationFrame(this.frame);
     this.animation = null;
     const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
-    const face = transition?.move[0];
-    const axis = axes[face]?.[0] ?? rotationAxes[face];
+    const axis = axes[turnFace(transition?.move)]?.[0];
     if (!axis || reduceMotion) {
       this.paint();
       return;
@@ -260,10 +259,12 @@ export class CubeView {
     const before = transition.before.asString();
     const { move } = transition;
     const turn = turnPower(move);
+    const wholeCube = isCubeRotation(move);
+    const wide = isWideTurn(move);
     const fullAngle = (turn === 3 ? 1 : -turn) * Math.PI / 2;
     const animate = time => {
       const t = Math.min(1, (time - started) / 226);
-      this.animation = t < 1 ? { before, cube: transition.before, axis, wholeCube: Boolean(rotationAxes[face]), angle: fullAngle * (1 - (1 - t) ** 3) } : null;
+      this.animation = t < 1 ? { before, cube: transition.before, axis, wholeCube, wide, angle: fullAngle * (1 - (1 - t) ** 3) } : null;
       this.paint();
       if (t < 1) this.frame = requestAnimationFrame(animate);
     };
@@ -306,21 +307,23 @@ export class CubeView {
     }
 
     const state = this.animation?.before ?? this.state;
-    const layer = this.animation ? null : axes[this.arrow?.[0]]?.[0];
-    const guideLayer = !this.followArrows && layer && dot(layer, camera.toward) < 0.065 ? layer : null;
+    const layer = this.animation ? null : axes[turnFace(this.arrow)]?.[0];
+    const arrowHidden = !this.followArrows && layer && dot(layer, camera.toward) < 0.065;
+    const wideGuide = isWideTurn(this.arrow);
+    const guideLayer = arrowHidden || wideGuide ? layer : null;
     let markers;
     if (this.targetSlots.length) {
       const { current, destinations } = targetPositions(this.animation?.cube ?? this.cube, this.targetSlots);
       const keys = positions => new Set(positions.map(piece => pieceCoordinates(piece).join(',')));
       markers = { pieces: keys(current), slots: keys(destinations) };
     }
-    drawCube(context, state, camera, project, { animation: this.animation, guideLayer, markers });
-    if (guideLayer) this.drawHiddenArrow(context, state, width);
+    drawCube(context, state, camera, project, { animation: this.animation, guideLayer, wideGuide, markers });
+    if (arrowHidden) this.drawHiddenArrow(context, state, width);
     else if (layer) this.drawArrow(context, camera, project, unit);
   }
 
   drawHiddenArrow(context, state, width) {
-    const face = this.arrow[0];
+    const face = turnFace(this.arrow);
     const [normal, across, down] = axes[face];
     const x = width - 29;
     const y = 29;
@@ -339,7 +342,7 @@ export class CubeView {
   }
 
   drawArrow(context, camera, project, unit) {
-    const [normal, across, down] = axes[this.arrow[0]];
+    const [normal, across, down] = axes[turnFace(this.arrow)];
     if (dot(normal, camera.toward) < 0.065) return;
     const direction = this.arrow[1] === "'" ? -1 : 1;
     const origin = scale(normal, 1.535);

@@ -5,6 +5,11 @@ export const faces = 'URFDLB';
 export const solved = new Cube();
 export const slots = ['Front-right', 'Front-left', 'Back-left', 'Back-right'];
 export const slotFaces = ['FR', 'FL', 'BL', 'BR'];
+const rotationFaces = { x: 'R', y: 'U', z: 'F' };
+
+export const turnFace = move => rotationFaces[move?.[0]] ?? move?.[0]?.toUpperCase();
+export const isCubeRotation = move => Boolean(rotationFaces[move?.[0]]);
+export const algorithmMoveCount = moves => moves.filter(move => !isCubeRotation(move)).length;
 
 export function invert(moves) {
   return moves.length ? Cube.inverse(moves.join(' ')).split(' ') : [];

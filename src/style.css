@@ -277,6 +277,7 @@ h1 { font-size: clamp(38px, 4.1vw, 56px); line-height: 1.09; letter-spacing: -.0
 .solution code { font: 700 12px var(--mono); line-height: 1.55; overflow-wrap: anywhere; }
 .solution > span:first-child svg { width: 14px; height: 14px; }
 .solution small { color: var(--muted); font-size: 10px; white-space: nowrap; }
+.algorithm-credit { margin-top: 8px; color: var(--muted); font-size: 10px; }
 .demo { margin-top: 10px; border: 1px solid #384454; border-radius: 8px; overflow: hidden; background: #111923; }
 .demo-stage { height: 185px; background-image: radial-gradient(ellipse at 50% 50%, #243541, #111923 73%); }
 .demo-toolbar { min-height: 38px; padding: 5px 7px; border-top: 1px solid #33404d; display: flex; align-items: center; gap: 5px; }

@@ -1,4 +1,6 @@
-import { faces, played, solved } from './cube.js';
+import { faces, invert, isCubeRotation, played, solved, turnFace } from './cube.js';
+
+const faceRotations = { R: 'x', L: 'x', U: 'y', D: 'y', F: 'z', B: 'z' };
 
 const grips = new Map();
 const queue = [{ cube: solved, rotation: [] }];
@@ -21,6 +23,21 @@ export function frontColors(top) {
   return [...'FRBLUD'].filter(front => grips.has(top + front));
 }
 
+export function cubeGrip(cube) {
+  return getGrip(faces[cube.center[0]] + faces[cube.center[2]]);
+}
+
+export function canonicalCube(cube) {
+  const { rotation } = cubeGrip(cube);
+  return rotation.length ? played(cube, invert(rotation)) : cube;
+}
+
 export function gripMove(move, grip) {
-  return grip.display[move[0]] + move.slice(1);
+  const [turn, modifier] = move;
+  const face = grip.display[turnFace(move)];
+  if (isCubeRotation(move)) {
+    const reverse = 'LDB'.includes(face) && modifier !== '2';
+    return faceRotations[face] + (reverse ? (modifier ? '' : "'") : modifier ?? '');
+  }
+  return (turn === turn.toUpperCase() ? face : face.toLowerCase()) + (modifier ?? '');
 }
