@@ -120,6 +120,7 @@ export class FullSolve {
         if (this.report === report && (this.phase === 'review' || this.step === step)) this.change();
       });
     }
+    this.change();
   }
 
   clearReport() {

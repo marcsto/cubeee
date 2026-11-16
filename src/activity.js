@@ -43,12 +43,14 @@ export function restoreReport(attempt) {
 
   let pairs = attempt.alreadySolved.length;
   const steps = attempt.steps.map(step => {
-    if (!validSlots(step.slots) || !validSlots(step.targetSlots) || !validFacelets(step.start) || !validFacelets(step.end) ||
-        !validMoves(step.moves) || !validMoves(step.suffix) || !validTiming(step.timing)) throw new Error('Invalid solve split.');
-    const title = step.kind === 'cross' ? 'White cross'
-      : step.slots.length === 1 ? `Pair ${pairs + 1}` : `Pairs ${pairs + 1}–${pairs + step.slots.length}`;
-    pairs += step.slots.length;
-    return { ...step, title, start: Cube.fromString(step.start), end: Cube.fromString(step.end) };
+    const { kind, slots, targetSlots, start, end, moves, suffix, timing, already } = step;
+    if (!['cross', 'pair'].includes(kind) || !validSlots(slots) || !validSlots(targetSlots) ||
+        !validFacelets(start) || !validFacelets(end) || !validMoves(moves) || !validMoves(suffix) ||
+        !validTiming(timing)) throw new Error('Invalid solve split.');
+    const title = kind === 'cross' ? 'White cross'
+      : slots.length === 1 ? `Pair ${pairs + 1}` : `Pairs ${pairs + 1}–${pairs + slots.length}`;
+    pairs += slots.length;
+    return { kind, title, slots, targetSlots, start: Cube.fromString(start), end: Cube.fromString(end), moves, suffix, timing, already: Boolean(already) };
   });
   return {
     alreadySolved: attempt.alreadySolved,
