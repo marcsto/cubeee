@@ -34,7 +34,7 @@ const caseListOffsets = new Map();
 const thumbnails = new Map();
 const historyDate = new Intl.DateTimeFormat(undefined, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
 const missedPracticeTurn = 'A Bluetooth turn was missed. Restart the case to record a complete attempt.';
-const nextCaseWindow = 5000;
+const practiceGestureWindow = 5000;
 const halfTurnWindow = 200;
 const faceNames = { U: 'top', R: 'right', F: 'front', D: 'bottom', L: 'left', B: 'back' };
 const stickerNames = { U: 'yellow', D: 'white', F: 'green', R: 'orange', L: 'red', B: 'blue' };
@@ -49,7 +49,7 @@ let sessionCount = 0;
 let page = 'practice';
 let mode = 'practice';
 let virtualPracticeIssue = '';
-let nextCaseTurn;
+let practiceGestureTurn;
 let filter = libraryGroups[0];
 let modifier = '';
 let noticeTimer;
@@ -127,7 +127,7 @@ const bluetooth = new BluetoothCube({
   turn(move, local = performance.now(), device) {
     if (trainer === virtualTrainer) {
       physicalTrainer.turn(move, local, device);
-      if (advanceOnTopTurn(move, local, device)) return;
+      if (handlePracticeGesture(move, local, device)) return;
     }
     trainer.turn(move, local, device);
   },
@@ -140,7 +140,7 @@ const bluetooth = new BluetoothCube({
 });
 
 function resetAfterDisconnect() {
-  nextCaseTurn = undefined;
+  practiceGestureTurn = undefined;
   if (mode === 'full') {
     full.interrupt('The cube disconnected. Reconnect or start a new attempt in virtual mode.');
     update();
@@ -476,10 +476,10 @@ function solveMarkup() {
 }
 
 function reviewMarkup() {
-  const topTurnHint = trainer === virtualTrainer && bluetooth.status === 'connected'
-    ? '<p class="phase-copy">Turn the top layer within 5 seconds of solving to load the next case.</p>' : '';
+  const gestureHint = trainer === virtualTrainer && bluetooth.status === 'connected'
+    ? '<p class="phase-copy">For 5 seconds after solving, turn the top layer for the next case. Turn the left or right face to retry.</p>' : '';
   return `<div class="phase-card" data-practice-result><div class="section-line"><h3>Pair solved</h3><span class="live-badge connected">${icon('Check')} Complete</span></div>
-    ${topTurnHint}
+    ${gestureHint}
     <p class="your-turns">Your turns <code>${notation(trainer.result.sequence)}</code></p>
     ${replayMarkup('practice')}
     ${practiceSolutionsMarkup()}
@@ -971,7 +971,7 @@ function select(item) {
 
 function startPractice(item) {
   const virtual = trainer === virtualTrainer;
-  nextCaseTurn = undefined;
+  practiceGestureTurn = undefined;
   virtualPracticeIssue = '';
   trainer.select(item, { virtual });
   if (virtual && bluetooth.awaitingState) interruptVirtualPractice(missedPracticeTurn);
@@ -981,20 +981,22 @@ function nextPracticeCase() {
   select(order.next(trainer.item));
 }
 
-function advanceOnTopTurn(move, local, device) {
-  const previous = nextCaseTurn;
-  nextCaseTurn = undefined;
-  if (page !== 'practice' || turnFace(move) !== 'U') return false;
+function handlePracticeGesture(move, local, device) {
+  const previous = practiceGestureTurn;
+  practiceGestureTurn = undefined;
+  const face = turnFace(move);
+  if (page !== 'practice' || !['U', 'L', 'R'].includes(face)) return false;
 
   // The GAN can report a half turn as two quarter turns.
   if (trainer.phase === 'ready' && previous?.move === move && elapsedBetween(previous, { local, device }) <= halfTurnWindow) return true;
   if (trainer.phase !== 'results') return false;
 
   const elapsed = local - trainer.solveLog.turns.at(-1).local;
-  if (elapsed < 0 || elapsed > nextCaseWindow) return false;
+  if (elapsed < 0 || elapsed > practiceGestureWindow) return false;
 
-  nextPracticeCase();
-  if (move !== 'U2') nextCaseTurn = { move, local, device };
+  if (face === 'U') nextPracticeCase();
+  else select(trainer.item);
+  if (move[1] !== '2') practiceGestureTurn = { move, local, device };
   return true;
 }
 
