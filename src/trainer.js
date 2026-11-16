@@ -57,7 +57,7 @@ export class Trainer {
     this.onUpdate();
   }
 
-  async select(item) {
+  async select(item, { virtual = false } = {}) {
     const generation = ++this.generation;
     this.item = item;
     this.phase = 'planning';
@@ -71,7 +71,8 @@ export class Trainer {
     this.solveLog = undefined;
     this.result = undefined;
     this.caseStart = undefined;
-    if (f2lPattern(this.cube) === item.pattern) {
+    if (virtual) this.cube = item.start.clone();
+    if (virtual || f2lPattern(this.cube) === item.pattern) {
       this.arm({ local: performance.now(), device: null });
       this.onUpdate();
       return;

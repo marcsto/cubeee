@@ -33,7 +33,7 @@ const libraryGroups = caseGroups.filter(group => ['all', 'easy', 'fundamentals',
 const caseListOffsets = new Map();
 const thumbnails = new Map();
 const historyDate = new Intl.DateTimeFormat(undefined, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
-const stageNames = ['Setup', 'Solve', 'Review'];
+const missedPracticeTurn = 'A Bluetooth turn was missed. Restart the case to record a complete attempt.';
 const faceNames = { U: 'top', R: 'right', F: 'front', D: 'bottom', L: 'left', B: 'back' };
 const stickerNames = { U: 'yellow', D: 'white', F: 'green', R: 'orange', L: 'red', B: 'blue' };
 const colorLabel = face => stickerNames[face][0].toUpperCase() + stickerNames[face].slice(1);
@@ -46,6 +46,7 @@ const order = new PracticeOrder(activity.preferences.order);
 let sessionCount = 0;
 let page = 'practice';
 let mode = 'practice';
+let virtualPracticeIssue = '';
 let filter = libraryGroups[0];
 let modifier = '';
 let noticeTimer;
@@ -59,14 +60,21 @@ let renderedPracticeStart;
 let renderedFullLog;
 let fullHint;
 let addressRequest;
-let renderedBluetoothStatus;
+let renderedCubeStatus;
 let renderedBattery;
 let accountBusy = false;
 let exportDays = '30';
 let historyView = 'cases';
 let historyDay;
 
-const trainer = new Trainer(update, result => {
+const physicalTrainer = new Trainer(transition => {
+  if (trainer === physicalTrainer) update(transition);
+}, recordPractice);
+const virtualTrainer = new Trainer(update, recordPractice);
+let practiceTrainer = physicalTrainer;
+let trainer = practiceTrainer;
+
+function recordPractice(result) {
   sessionCount++;
   activity.record(savedAttempt('practice', result, result.sequence, {
     caseId: result.id,
@@ -75,9 +83,9 @@ const trainer = new Trainer(update, result => {
     assisted: Boolean(trainer.solveLog.assisted),
     bestKnownMoves: Math.min(...trainer.item.solutions.map(algorithmMoveCount)),
   }));
-});
+}
 
-const full = new FullSolve(trainer, () => {
+const full = new FullSolve(physicalTrainer, () => {
   if (page === 'full') renderWork();
 }, (kind, log, result) => {
   const details = { start: log.start.asString(), assisted: Boolean(log.assisted) };
@@ -94,14 +102,29 @@ const bluetooth = new BluetoothCube({
   change() {
     if (renderConnection() && (page === 'practice' || page === 'full')) renderWork();
   },
-  sync(cube, force) {
+  sync(cube, force, turnsSkipped) {
+    if (trainer === virtualTrainer) {
+      const stateChanged = cube.asString() !== physicalTrainer.cube.asString();
+      physicalTrainer.sync(cube, force, true);
+      if (!force && (turnsSkipped || stateChanged)) interruptVirtualPractice(missedPracticeTurn);
+      if (force && trainer.phase === 'solving') {
+        interruptVirtualPractice('The Bluetooth cube connected during this attempt. Restart the case to use it for turns.');
+      }
+      return;
+    }
     if (mode === 'full' && (force || cube.asString() !== trainer.cube.asString())) {
       full.interrupt('The cube state changed. Start a new attempt to record accurate splits.');
     }
     trainer.sync(cube, force, mode === 'full');
   },
   disconnect: resetAfterDisconnect,
-  turn(move, local, device) { trainer.turn(move, local, device); },
+  missedTurn() {
+    if (trainer === virtualTrainer) interruptVirtualPractice(missedPracticeTurn);
+  },
+  turn(move, local, device) {
+    if (trainer === virtualTrainer) physicalTrainer.turn(move, local, device);
+    trainer.turn(move, local, device);
+  },
   error: showNotice,
   address: askAddress,
   async addressStore(deviceName) {
@@ -114,7 +137,16 @@ function resetAfterDisconnect() {
   if (mode === 'full') {
     full.interrupt('The cube disconnected. Reconnect or start a new attempt in virtual mode.');
     update();
-  } else trainer.select(trainer.item);
+  } else if (trainer === virtualTrainer) {
+    interruptVirtualPractice('The Bluetooth cube disconnected. Reconnect or restart with the on-screen controls.');
+  } else startPractice(trainer.item);
+}
+
+function interruptVirtualPractice(message) {
+  if (!practiceIsSolving()) return;
+  virtualPracticeIssue = message;
+  virtualTrainer.free();
+  update();
 }
 
 function update(transition) {
@@ -229,7 +261,7 @@ function renderSessionCount() {
     : `${sessionCount} ${sessionCount === 1 ? 'rep' : 'reps'}`;
 }
 
-function go(destination, practiceItem = trainer.item) {
+function go(destination, practiceItem = practiceTrainer.item) {
   page = destination;
   const [title, description] = {
     practice: ['F2L Practice', 'Train recognition and execution, one pair at a time.'],
@@ -247,6 +279,7 @@ function go(destination, practiceItem = trainer.item) {
   if (destination === 'full' && mode !== 'full') {
     clearPreview();
     mode = 'full';
+    trainer = physicalTrainer;
     trainer.free();
     live.show(trainer.cube, null);
   } else if (destination === 'practice' && mode === 'full') {
@@ -254,16 +287,21 @@ function go(destination, practiceItem = trainer.item) {
     clearFullHint();
     mode = 'practice';
     full.interrupt();
-    trainer.select(practiceItem);
+    trainer = practiceTrainer;
+    startPractice(practiceItem);
   }
+  renderConnection();
   renderSessionCount();
   renderWork();
 }
 
 function renderConnection() {
-  const statusChanged = renderedBluetoothStatus !== bluetooth.status;
+  const virtual = trainer === virtualTrainer;
+  const awaitingState = bluetooth.awaitingState;
+  const status = `${bluetooth.status}:${virtual}:${awaitingState}`;
+  const statusChanged = renderedCubeStatus !== status;
   if (!statusChanged && renderedBattery === bluetooth.battery) return false;
-  renderedBluetoothStatus = bluetooth.status;
+  renderedCubeStatus = status;
   renderedBattery = bluetooth.battery;
   const connected = bluetooth.status === 'connected';
   const connecting = bluetooth.status === 'connecting';
@@ -271,8 +309,11 @@ function renderConnection() {
   label.textContent = connected ? 'GAN i4 connected' : connecting ? 'Connecting…' : 'Connect GAN i4';
   $('#connect-button').classList.toggle('connected', connected);
   $('#connect-button').disabled = connecting;
-  $('.live-badge').classList.toggle('connected', connected);
-  $('#cube-status').textContent = connected ? 'Synced via Bluetooth' : connecting ? 'Connecting' : 'Virtual mode';
+  $('.live-badge').classList.toggle('connected', connected && !awaitingState);
+  $('#cube-title').textContent = virtual ? 'Virtual cube' : 'Live cube';
+  $('#cube-status').textContent = awaitingState ? 'Sync needed' : connected
+    ? virtual ? 'Bluetooth controls' : 'Synced via Bluetooth'
+    : connecting ? 'Connecting' : 'On-screen controls';
   $('#cube-input').innerHTML = connected
     ? `<span class="input-caption">${icon('Bluetooth')} Turn your physical cube</span><span class="history-meta">${Number.isFinite(bluetooth.battery) ? `${bluetooth.battery}% battery` : 'Bluetooth active'}</span><button class="settings-link" data-action="resync">${icon('RefreshCw')} Sync state</button>`
     : `<span class="input-caption">${icon('Keyboard')} Cube controls</span><div class="keys" aria-label="Turn the virtual cube">
@@ -328,15 +369,21 @@ function renderWork() {
 
 function practiceMarkup() {
   const { item, phase, result } = trainer;
-  const stage = phase === 'results' ? 2 : practiceIsSolving() ? 1 : 0;
+  const virtualPractice = trainer === virtualTrainer;
+  const solving = practiceIsSolving();
+  const stages = virtualPractice ? ['Solve', 'Review'] : ['Setup', 'Solve', 'Review'];
+  const stage = stages.indexOf(phase === 'results' ? 'Review' : virtualPractice || solving ? 'Solve' : 'Setup');
   return `<div class="practice-controls">
-    <label for="practice-order">Practice order</label>
-    <div class="select-wrap"><select id="practice-order">
-      ${order.mode === 'review' ? `<option value="review" selected>Review set · ${caseCount(order.group.items.length)}</option>` : ''}
-      <option value="ordered" ${order.mode === 'ordered' ? 'selected' : ''}>In order</option>
-      <optgroup label="Random practice">${caseGroups.map(group => `<option value="${group.id}" ${order.mode === group.id ? 'selected' : ''}>Random · ${group.label}</option>`).join('')}</optgroup>
-    </select>${icon('ChevronDown')}</div>
-    ${order.mode === 'review' ? '<button class="text-button" data-action="end-review">End review</button>' : ''}
+    <div class="practice-order">
+      <label for="practice-order">Practice order</label>
+      <div class="select-wrap"><select id="practice-order">
+        ${order.mode === 'review' ? `<option value="review" selected>Review set · ${caseCount(order.group.items.length)}</option>` : ''}
+        <option value="ordered" ${order.mode === 'ordered' ? 'selected' : ''}>In order</option>
+        <optgroup label="Random practice">${caseGroups.map(group => `<option value="${group.id}" ${order.mode === group.id ? 'selected' : ''}>Random · ${group.label}</option>`).join('')}</optgroup>
+      </select>${icon('ChevronDown')}</div>
+      ${order.mode === 'review' ? '<button class="text-button" data-action="end-review">End review</button>' : ''}
+    </div>
+    <button id="virtual-practice" class="button ghost practice-mode" data-action="virtual-practice" aria-pressed="${virtualPractice}" title="Load each case directly on the virtual cube">${icon('Box')} Virtual cube</button>
   </div>
   <div class="case-head">
     <div class="case-top"><div class="case-kicker">CASE ${number(item.id)} ${categoryBadge(item.category)}</div>
@@ -344,8 +391,8 @@ function practiceMarkup() {
     </div>
     <h2>${item.title}</h2><p>${item.detail}</p>
   </div>
-  <div class="stepper" aria-label="Practice progress">${stageNames.map((name, index) => `<div class="step ${index === stage ? 'active' : index < stage ? 'done' : ''}" ${index === stage ? 'aria-current="step"' : ''}><i>${index < stage ? icon('Check') : index + 1}</i>${name}</div>`).join('')}</div>
-  ${stage === 0 ? setupMarkup() : stage === 1 ? solveMarkup() : reviewMarkup()}
+  <div class="stepper" aria-label="Practice progress">${stages.map((name, index) => `<div class="step ${index === stage ? 'active' : index < stage ? 'done' : ''}" ${index === stage ? 'aria-current="step"' : ''}><i>${index < stage ? icon('Check') : index + 1}</i>${name}</div>`).join('')}</div>
+  ${phase === 'results' ? reviewMarkup() : solving ? solveMarkup() : virtualPractice ? interruptedPracticeMarkup() : setupMarkup()}
   <div class="metrics" aria-label="Current attempt statistics">${metric('Thinking', result ? time(result.think) : '—', result ? 's' : '', 'Clock', 'thinking')}${metric('Execution', result ? time(result.execution) : '—', result ? 's' : '', 'Zap', 'execution')}${metric('Moves', result?.moves ?? (phase === 'solving' ? trainer.turns.length : '—'), '', 'Move', 'moves')}</div>`;
 }
 
@@ -389,9 +436,19 @@ function setupMarkup(kind = 'case') {
 }
 
 function practiceSolveStatus() {
+  const description = trainer !== virtualTrainer ? 'Your first turn ends thinking time and starts execution.' : bluetooth.status === 'connected'
+    ? 'Watch the virtual cube and turn your Bluetooth cube. Your first turn starts execution.'
+    : 'Use the face buttons or keyboard. Your first turn starts execution.';
   return trainer.phase === 'ready'
-    ? { title: 'Ready to solve', description: 'Your first turn ends thinking time and starts execution.', timerLabel: 'Thinking time' }
+    ? { title: 'Ready to solve', description, timerLabel: 'Thinking time' }
     : { title: 'Solving the pair', description: 'Finish the front-right pair and restore the white cross and any solved slots.', timerLabel: 'Execution time' };
+}
+
+function interruptedPracticeMarkup() {
+  const awaitingState = bluetooth.awaitingState;
+  return `<div class="phase-card"><h3>Attempt interrupted</h3>
+    <p class="phase-copy" role="status">${awaitingState ? 'Sync your Bluetooth cube before starting another attempt.' : virtualPracticeIssue}</p>
+    <div class="actions">${awaitingState ? `<button class="button" data-action="resync">${icon('RefreshCw')} Sync state</button>` : `<button class="button" data-action="retry">${icon('RotateCcw')} Restart case</button>`}</div></div>`;
 }
 
 function solveMarkup() {
@@ -780,7 +837,7 @@ function activityChanged({ attempts, preferences, account }) {
     clearPreview();
     clearFullHint();
     full.clearReport();
-    if (mode === 'practice' && trainer.phase === 'results') trainer.select(trainer.item);
+    if (mode === 'practice' && trainer.phase === 'results') startPractice(trainer.item);
     sessionCount = 0;
     full.completed = 0;
     if ($('#account-email') && dialog.open) dialog.close();
@@ -857,8 +914,9 @@ function askAddress(deviceName) {
 function showHelp() {
   openDialog('Cube controls', `<p>Hold the training cube with white down and green facing you. Keep this orientation as you follow the setup.</p><ul>
     <li>To wake the GAN i4, turn its white face. Open this site in Chrome or Edge and choose <strong>Connect GAN i4</strong>.</li>
-    <li>In virtual mode, press U, R, F, D, L, or B to turn a face. Hold Shift for a counterclockwise turn or Alt for a half turn.</li>
-    <li>Use Enter to apply the next guided turn in virtual mode. Drag either cube to see its other faces.</li>
+    <li>Choose <strong>Virtual cube</strong> in F2L Practice to load each case on screen. Watch the screen and use your connected cube to turn.</li>
+    <li>With the GAN disconnected, press U, R, F, D, L, or B to turn a face. Hold Shift for a counterclockwise turn or Alt for a half turn. Use Enter to apply the next guided turn.</li>
+    <li>Drag either cube to see its other faces.</li>
     <li>In Cross + F2L, the solve starts on the first turn. For each pair, thinking runs from the previous split to your next turn. Two consecutive quarter turns in the same direction count as one half turn.</li>
     </ul><div class="actions"><button class="button secondary" data-action="close">Done</button></div>`);
 }
@@ -897,7 +955,14 @@ function select(item) {
   gripOverride = undefined;
   const needsPracticeMode = mode !== 'practice';
   if (page !== 'practice') go('practice', item);
-  if (!needsPracticeMode) trainer.select(item);
+  if (!needsPracticeMode) startPractice(item);
+}
+
+function startPractice(item) {
+  const virtual = trainer === virtualTrainer;
+  virtualPracticeIssue = '';
+  trainer.select(item, { virtual });
+  if (virtual && bluetooth.awaitingState) interruptVirtualPractice(missedPracticeTurn);
 }
 
 function updatePreview(transition) {
@@ -1018,6 +1083,14 @@ const action = {
   next: () => select(order.next(trainer.item)),
   previous: () => select(order.previous(trainer.item)),
   retry: () => select(trainer.item),
+  'virtual-practice': () => {
+    const item = trainer.item;
+    trainer.free();
+    practiceTrainer = trainer === virtualTrainer ? physicalTrainer : virtualTrainer;
+    trainer = practiceTrainer;
+    renderConnection();
+    select(item);
+  },
   'replay-attempt': replayAttempt,
   'show-solutions': () => {
     if (page === 'full' && fullIsSolving()) {
@@ -1198,5 +1271,5 @@ setInterval(tick, 33);
 hydrate();
 renderConnection();
 renderRecent();
-trainer.select(order.group ? order.next() : cases[0]);
+startPractice(order.group ? order.next() : cases[0]);
 const accountReady = activity.connect(firebaseConfig);

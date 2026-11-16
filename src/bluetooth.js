@@ -31,6 +31,8 @@ export class BluetoothCube {
     this.callbacks = callbacks;
   }
 
+  get awaitingState() { return this.status === 'connected' && this.lastSerial === null; }
+
   async connect() {
     if (this.status !== 'disconnected') return;
     if (!navigator.bluetooth) {
@@ -113,19 +115,25 @@ export class BluetoothCube {
     } else if (event.type === 'FACELETS' && validFacelets(event.facelets)) {
       const cube = ganState(event.facelets);
       const wasConnected = this.status === 'connected';
+      const serial = event.serial & 0xff;
+      const turnsSkipped = wasConnected && serial !== this.lastSerial;
       this.status = 'connected';
-      this.lastSerial = event.serial;
-      this.callbacks.sync(cube, !wasConnected);
+      this.lastSerial = serial;
+      this.callbacks.sync(cube, !wasConnected, turnsSkipped);
       this.waiting?.(null, cube);
       this.callbacks.change();
     } else if (event.type === 'MOVE' && this.status === 'connected') {
-      if (event.serial === this.lastSerial) return;
-      if (((event.serial - this.lastSerial + 256) % 256) !== 1) {
+      const serial = event.serial & 0xff;
+      if (this.awaitingState || serial === this.lastSerial) return;
+      if (serial !== ((this.lastSerial + 1) & 0xff)) {
+        this.lastSerial = null;
+        this.callbacks.missedTurn();
+        this.callbacks.change();
         this.callbacks.error('A turn was missed. Refreshing the cube state.');
         this.resync().catch(error => this.callbacks.error(error.message));
         return;
       }
-      this.lastSerial = event.serial;
+      this.lastSerial = serial;
       this.callbacks.turn(ganMove(event.move), event.localTimestamp ?? event.timestamp, event.cubeTimestamp);
     } else if (event.type === 'BATTERY') {
       this.battery = event.batteryLevel;
