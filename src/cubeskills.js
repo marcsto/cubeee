@@ -18,9 +18,15 @@ for (const text of guide) {
   byPattern.get(pattern).push(moves);
 }
 
-function alignMoves(turn, moves) {
-  if (!turn) return moves;
-  return moves[0][0] === 'U' ? [...simplify([turn, moves[0]]), ...moves.slice(1)] : [turn, ...moves];
+export function simplifyOpeningUTurns(moves) {
+  const firstOtherTurn = moves.findIndex(move => move[0] !== 'U' && move[0] !== 'y');
+  const boundary = firstOtherTurn === -1 ? moves.length : firstOtherTurn;
+  const opening = moves.slice(0, boundary);
+  const topTurns = opening.filter(move => move[0] === 'U');
+  if (topTurns.length < 2) return moves;
+  // A y rotation leaves the U face facing up, so opening U turns can combine across it.
+  const rotations = opening.filter(move => move[0] === 'y');
+  return [...rotations, ...simplify(topTurns), ...moves.slice(boundary)];
 }
 
 export function cubeSkillsSolutions(start, end, slot, targetSlots) {
@@ -36,7 +42,8 @@ export function cubeSkillsSolutions(start, end, slot, targetSlots) {
     const pattern = pairPattern(turn ? played(aligned, [turn]) : aligned);
     for (const source of byPattern.get(pattern) ?? []) {
       if (used.has(source)) continue;
-      const moves = alignMoves(turn, source).map(move => gripMove(move, inverse));
+      const alignedMoves = turn ? simplifyOpeningUTurns([turn, ...source]) : source;
+      const moves = alignedMoves.map(move => gripMove(move, inverse));
       if (matchesPieces(canonicalCube(played(start, moves)), end, pieces)) {
         used.add(source);
         options.push(moves);

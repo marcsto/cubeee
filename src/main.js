@@ -5,7 +5,7 @@ import './style.css';
 import { Activity, ArrowRight, Bluetooth, Box, Check, ChevronDown, ChevronLeft, ChevronRight, CircleAlert, CircleHelp, Clock, History, Keyboard, LayoutGrid, Move, Pause, Play, RefreshCw, RotateCcw, Scan, Star, Target, UserRound, Zap, X, createElement } from 'lucide';
 import { ActivityHistory, recentLimit, restoreReport, savedAttempt, savedReport } from './activity.js';
 import { algorithmMoveCount, crossSolved, faces, invert, isCubeRotation, played, slotFaces, slotSolved, slots, solved, turnFace } from './cube.js';
-import { cubeSkillsGuide, cubeSkillsSolutions } from './cubeskills.js';
+import { cubeSkillsGuide, cubeSkillsSolutions, simplifyOpeningUTurns } from './cubeskills.js';
 import { caseThumbnail, CubeView } from './cube-view.js';
 import { BluetoothCube, normalizeAddress } from './bluetooth.js';
 import { FullSolve } from './full-solve.js';
@@ -679,7 +679,8 @@ function preferredSolution(context) {
   const choice = typeof value === 'number' || Array.isArray(value) ? value : value?.choice;
   const valid = isCase ? Number.isInteger(choice) && context.solutions[choice]
     : Array.isArray(choice) && choice.length > 0 && choice.every(move => typeof move === 'string' && /^[URFDLBurfdlbxyz][2']?$/.test(move));
-  return { key, choice: valid ? choice : undefined, grip: getGrip(valid ? value?.grip : undefined) };
+  if (!valid) return { key, choice: undefined, grip: getGrip() };
+  return { key, choice: isCase ? choice : simplifyOpeningUTurns(choice), grip: getGrip(value?.grip) };
 }
 
 function solutionGrip(context) {
