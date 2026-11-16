@@ -1,0 +1,44 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function owns(uid) {
+      return request.auth != null && request.auth.uid == uid;
+    }
+
+    function validAttempt(data) {
+      return data.keys().hasAll(['version', 'kind', 'time', 'think', 'execution', 'total', 'moves', 'sequence', 'start', 'assisted'])
+        && data.keys().hasOnly(['version', 'kind', 'time', 'think', 'execution', 'total', 'moves', 'sequence', 'start', 'assisted',
+          'caseId', 'slots', 'bestKnownMoves', 'steps', 'alreadySolved'])
+        && data.version == 1 && data.kind in ['practice', 'full', 'drill']
+        && data.time is int && data.time > 0
+        && data.think is number && data.think >= 0
+        && data.execution is number && data.execution >= 0
+        && data.total is number && data.total >= 0
+        && data.sequence is list && data.moves == data.sequence.size()
+        && data.start is string && data.start.matches('[URFDLB]{54}')
+        && data.assisted is bool
+        && (data.kind == 'full'
+          ? data.steps is list && data.steps.size() in [1, 2, 3, 4, 5] && data.alreadySolved is list
+          : data.slots is list && data.slots.size() in [1, 2, 3, 4])
+        && (data.kind != 'practice' || (data.caseId is int && data.caseId > 0 && data.bestKnownMoves is int));
+    }
+
+    function validPreference(data) {
+      return data.keys().hasOnly(['key', 'value']) && data.key is string
+        && (data.key == 'order'
+          ? data.value in ['ordered', 'all', 'easy', 'fundamentals', 'white-up', 'in-slot', 'advanced', 'wrong-edge', 'wrong-corner']
+          : (data.key.matches('case:[0-9]{1,3}') && data.value is int && data.value >= 0)
+            || (data.key.matches('pair:[0-9:,|]{1,160}') && data.value is list && data.value.size() <= 100));
+    }
+
+    match /users/{uid}/attempts/{id} {
+      allow read: if owns(uid);
+      allow create: if owns(uid) && id.matches('[0-9a-f-]{36}') && validAttempt(request.resource.data);
+    }
+
+    match /users/{uid}/preferences/{id} {
+      allow read: if owns(uid);
+      allow create, update: if owns(uid) && validPreference(request.resource.data);
+    }
+  }
+}

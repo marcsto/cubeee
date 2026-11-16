@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#101216">
+    <meta name="description" content="Practice F2L with your GAN smart cube. Set up any case, time your solves, and find the algorithm that works for you.">
+    <link rel="icon" href="/favicon.png">
+    <title>cubeee | F2L Practice</title>
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="topbar-inner">
+        <button class="wordmark" data-view="practice" aria-label="cubeee home">
+          <span class="mark" data-icon="Box" aria-hidden="true"></span><span>cubeee</span>
+        </button>
+        <nav aria-label="Main navigation">
+          <button data-view="practice" class="nav-item" aria-current="page"><span data-icon="Target"></span>Practice</button>
+          <button data-view="full" class="nav-item"><span data-icon="Activity"></span>Cross + F2L</button>
+          <button data-view="library" class="nav-item"><span data-icon="LayoutGrid"></span>Case library</button>
+          <button data-view="history" class="nav-item"><span data-icon="History"></span>History</button>
+        </nav>
+        <div class="header-actions">
+          <button class="icon-button help-button" data-action="help" aria-label="Help and keyboard shortcuts" title="Help and keyboard shortcuts"><span data-icon="CircleHelp"></span></button>
+          <button class="button connect" data-action="connect" id="connect-button"><span data-icon="Bluetooth"></span><span id="connect-label">Connect GAN i4</span></button>
+          <button class="button secondary account-button" data-action="account" id="account-button" aria-label="Sign in with Google" disabled><span data-icon="UserRound"></span><span id="account-label">Sign in</span></button>
+        </div>
+      </div>
+    </header>
+
+    <main class="page">
+      <div class="hero">
+        <div>
+          <div class="eyebrow"><span class="eyebrow-rule"></span> SPEEDCUBE TRAINER</div>
+          <h1 id="page-title">F2L Practice</h1>
+          <p id="page-description">Train recognition and execution, one pair at a time.</p>
+        </div>
+        <div class="session-badge" id="session-badge"><span class="session-icon" data-icon="Activity"></span><span><strong id="session-count">0 reps</strong><small>This session</small></span></div>
+      </div>
+
+      <div class="workspace">
+        <section class="panel live-panel" aria-labelledby="cube-title">
+          <div class="panel-heading live-heading">
+            <div class="heading-with-icon"><span data-icon="Box"></span><h2 id="cube-title">Live cube</h2></div>
+            <span class="live-badge"><span class="status-dot"></span><span id="cube-status">Virtual mode</span></span>
+          </div>
+          <div id="pair-guide" class="pair-guide" hidden></div>
+          <div class="cube-stage">
+            <canvas id="live-canvas" role="img" aria-label="Current cube sticker state. Drag to rotate the view."></canvas>
+            <button class="icon-button camera-control" data-action="camera" aria-label="Reset cube view" title="Reset cube view"><span data-icon="Scan"></span></button>
+            <div class="orientation"><span class="orientation-dot"></span> White down <span class="orientation-separator"></span><span class="green-dot"></span> Green front</div>
+            <span class="drag-hint"><span data-icon="Move"></span> Drag to orbit</span>
+          </div>
+          <div id="cube-input" class="cube-input"></div>
+        </section>
+
+        <section class="panel work-panel" aria-label="Training workspace" id="work-panel"></section>
+      </div>
+
+      <section class="panel recent-panel" aria-labelledby="recent-title" id="recent-panel"></section>
+      <footer class="footer"><span>cubeee <span class="footer-dot">·</span> F2L practice</span><button class="text-button" data-action="help"><span data-icon="Keyboard"></span> Controls</button></footer>
+    </main>
+
+    <dialog id="dialog" aria-labelledby="dialog-title"></dialog>
+    <div id="notice" role="status" class="notice" hidden></div>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
