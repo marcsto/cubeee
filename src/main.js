@@ -236,7 +236,7 @@ function updateFull(previousPhase) {
 }
 
 function visibleTargets() {
-  if (page === 'practice') return [0];
+  if (page === 'practice') return trainer === virtualTrainer ? [] : [0];
   if (page !== 'full') return [];
   if (full.phase === 'review' || full.phase.includes('drill')) return full.step?.slots ?? [];
   return full.targetSlot !== null && (full.phase === 'ready' || full.phase === 'solving') ? [full.targetSlot] : [];
@@ -476,7 +476,7 @@ function solveMarkup() {
 
 function reviewMarkup() {
   const gestureHint = trainer === virtualTrainer && bluetooth.status === 'connected'
-    ? '<p class="phase-copy">Turn the top layer for the next case. Turn the left or right face to retry.</p>' : '';
+    ? '<p class="phase-copy">Turn the left or right face for the next case. Turn the top layer to retry.</p>' : '';
   return `<div class="phase-card" data-practice-result><div class="section-line"><h3>Pair solved</h3><span class="live-badge connected">${icon('Check')} Complete</span></div>
     ${gestureHint}
     <p class="your-turns">Your turns <code>${notation(trainer.result.sequence)}</code></p>
@@ -990,8 +990,8 @@ function handlePracticeGesture(move, local, device) {
   if (trainer.phase === 'ready' && previous?.move === move && elapsedBetween(previous, { local, device }) <= halfTurnWindow) return true;
   if (trainer.phase !== 'results') return false;
 
-  if (face === 'U') nextPracticeCase();
-  else select(trainer.item);
+  if (face === 'U') select(trainer.item);
+  else nextPracticeCase();
   if (move[1] !== '2') practiceGestureTurn = { move, local, device };
   return true;
 }
