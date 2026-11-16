@@ -1,7 +1,7 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth, GoogleAuthProvider, onAuthStateChanged, signInWithPopup, signOut } from 'firebase/auth';
 import {
-  collection, doc, getDocsFromServer, initializeFirestore, limit, onSnapshot, orderBy,
+  collection, doc, getDoc, getDocsFromServer, initializeFirestore, limit, onSnapshot, orderBy,
   persistentLocalCache, persistentMultipleTabManager, query, setDoc, where,
 } from 'firebase/firestore';
 import { recentLimit } from './activity.js';
@@ -56,6 +56,22 @@ export function connectFirebase(config, change) {
     },
     savePreference(uid, key, value) {
       return setDoc(doc(preferences(uid), encodeURIComponent(key)), { key, value });
+    },
+    async cubeAddressStore(name) {
+      await auth.authStateReady();
+      const uid = auth.currentUser?.uid;
+      if (!uid) return;
+      const ref = doc(db, 'users', uid, 'cubeAddresses', encodeURIComponent(name));
+      return {
+        async read() {
+          if (auth.currentUser?.uid !== uid) return;
+          const saved = await getDoc(ref);
+          if (auth.currentUser?.uid === uid) return saved.data()?.address;
+        },
+        async save(address) {
+          if (auth.currentUser?.uid === uid) await setDoc(ref, { address });
+        },
+      };
     },
     async exportSince(uid, since) {
       return readAttempts(await getDocsFromServer(query(attempts(uid), where('time', '>=', since), byTime)));

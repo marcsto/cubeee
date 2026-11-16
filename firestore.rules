@@ -40,5 +40,13 @@ service cloud.firestore {
       allow read: if owns(uid);
       allow create, update: if owns(uid) && validPreference(request.resource.data);
     }
+
+    match /users/{uid}/cubeAddresses/{name} {
+      allow get: if owns(uid);
+      allow create, update: if owns(uid)
+        && request.resource.data.keys().hasOnly(['address'])
+        && request.resource.data.address is string
+        && request.resource.data.address.matches('([0-9A-F]{2}:){5}[0-9A-F]{2}');
+    }
   }
 }

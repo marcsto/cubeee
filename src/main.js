@@ -94,6 +94,10 @@ const bluetooth = new BluetoothCube({
   turn(move, local, device) { trainer.turn(move, local, device); },
   error: showNotice,
   address: askAddress,
+  async addressStore(deviceName) {
+    await accountReady;
+    return activity.cloud?.cubeAddressStore(deviceName);
+  },
 });
 
 function resetAfterDisconnect() {
@@ -995,4 +999,4 @@ hydrate();
 renderConnection();
 renderRecent();
 trainer.select(order.group ? order.next() : cases[0]);
-activity.connect(firebaseConfig);
+const accountReady = activity.connect(firebaseConfig);
