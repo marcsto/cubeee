@@ -115,6 +115,7 @@ h1 { font-size: clamp(38px, 4.1vw, 56px); line-height: 1.09; letter-spacing: -.0
 .work-panel { min-height: 463px; }
 .practice-controls { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 19px; background: #15181e; border-bottom: 1px solid var(--edge); }
 .practice-controls label { font-size: 11px; font-weight: 800; color: var(--muted); white-space: nowrap; }
+.practice-controls .text-button { flex: none; }
 .select-wrap { display: grid; grid-template-areas: 'select'; max-width: min(100%, 224px); min-width: 0; }
 .select-wrap > * { grid-area: select; }
 .select-wrap select { min-width: 0; width: 100%; appearance: none; border: 1px solid #3b414d; border-radius: 6px; background: #242930; color: var(--ink); padding: 6px 27px 6px 9px; font: 750 11px 'Manrope Variable', sans-serif; cursor: pointer; text-overflow: ellipsis; }
@@ -212,7 +213,17 @@ h1 { font-size: clamp(38px, 4.1vw, 56px); line-height: 1.09; letter-spacing: -.0
 .case-item strong { font-size: 12px; font-weight: 850; }
 .case-item small { display: block; color: var(--muted); font-size: 10px; margin-top: 3px; }
 .case-number { margin-right: 5px; color: var(--accent); font: 700 10px var(--mono); }
+.case-reps { color: var(--ink); }
 .case-item > span:last-child svg { width: 13px; height: 13px; color: var(--dim); }
+.history-tabs { display: flex; gap: 6px; padding: 12px 19px; border-bottom: 1px solid var(--edge); background: #15181e; }
+.history-tabs .filter { padding: 7px 10px; font-size: 11px; }
+.history-day { display: flex; align-items: end; justify-content: space-between; flex-wrap: wrap; gap: 10px; padding: 0 19px 13px; }
+.history-day-field { display: grid; flex: 1 1 170px; max-width: 250px; min-width: 0; gap: 4px; }
+.history-day-field label { font-size: 11px; font-weight: 800; color: var(--muted); }
+.history-day-field .select-wrap { max-width: none; }
+.history-day-field select, .history-day .button { min-height: 35px; }
+.history-day .button { font-size: 11px; }
+.practice-history-list { min-height: 0; border-block: 1px solid var(--edge); }
 .history-summary { display: grid; grid-template-columns: repeat(3, 1fr); gap: 7px; padding: 0 19px 15px; }
 .history-summary .metric { border: 1px solid #333943; border-radius: 7px; background: #20252d; }
 .history-body { max-height: 377px; overflow: auto; }

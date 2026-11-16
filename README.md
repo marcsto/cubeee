@@ -8,7 +8,7 @@ Virtual mode supports the face buttons and the U, R, F, D, L, and B keys. Hold S
 
 ## History
 
-Sign in with Google to sync completed F2L practice, Cross + F2L solves, pair retries, preferred algorithms, and the practice filter across computers. In History, select a saved Cross + F2L solve to reopen its splits, or export a date range as JSON. Guest attempts and preferences stay in the browser. History shows the latest 250 attempts, and account exports can include older attempts.
+Sign in with Google to sync completed F2L practice, Cross + F2L solves, pair retries, preferred algorithms, and the practice filter across computers. In **History → Case practice**, pick a day to see which cases you completed and how many reps you did. Choose **Practice these cases** to review that day's set. Open **All attempts** to reopen a saved Cross + F2L solve or export a date range as JSON. Guest attempts and preferences stay in the browser. History shows the latest 250 attempts, and account exports can include older attempts.
 
 ## Development
 

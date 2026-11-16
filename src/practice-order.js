@@ -11,6 +11,22 @@ export const caseGroups = [
   { id: 'wrong-corner', label: 'Corners in wrong slots', items: cases.filter(item => item.title === 'Corner in the wrong slot' || item.title === 'Pair in wrong slots') },
 ];
 
+export function practiceDays(attempts) {
+  const days = new Map();
+  for (const { kind, caseId, time } of attempts) {
+    const item = cases[caseId - 1];
+    if (kind !== 'practice' || !item || !Number.isFinite(time)) continue;
+    const date = new Date(time);
+    if (!Number.isFinite(date.getTime())) continue;
+    const key = date.toDateString();
+    if (!days.has(key)) days.set(key, { key, date, reps: 0, counts: new Map() });
+    const day = days.get(key);
+    day.reps++;
+    day.counts.set(item, (day.counts.get(item) ?? 0) + 1);
+  }
+  return days;
+}
+
 function shuffled(items) {
   const deck = [...items];
   for (let index = deck.length - 1; index > 0; index--) {
@@ -27,6 +43,15 @@ export class PracticeOrder {
 
   reset(mode, current) {
     this.group = caseGroups.find(group => group.id === mode);
+    this.resetDeck(current);
+  }
+
+  review(items, current) {
+    this.group = { id: 'review', items };
+    this.resetDeck(current);
+  }
+
+  resetDeck(current) {
     this.mode = this.group?.id ?? 'ordered';
     const included = this.group?.items.includes(current);
     this.history = included ? [current] : [];

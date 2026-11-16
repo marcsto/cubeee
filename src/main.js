@@ -8,7 +8,7 @@ import { crossSolved, invert, played, slotFaces, slotSolved, slots, solved } fro
 import { caseThumbnail, CubeView } from './cube-view.js';
 import { BluetoothCube, normalizeAddress } from './bluetooth.js';
 import { FullSolve } from './full-solve.js';
-import { caseGroups, PracticeOrder } from './practice-order.js';
+import { caseGroups, practiceDays, PracticeOrder } from './practice-order.js';
 import { planPair } from './planner.js';
 import { matchesPieces, phasePieces, pieceState } from './solve-session.js';
 import { Trainer, cases } from './trainer.js';
@@ -25,9 +25,12 @@ const number = id => String(id).padStart(2, '0');
 const showMove = move => move.replace("'", '′');
 const notation = moves => moves.map(showMove).join(' ');
 const time = ms => (ms / 1000).toFixed(2);
+const caseCount = count => `${count} ${count === 1 ? 'case' : 'cases'}`;
+const repCount = count => `${count} ${count === 1 ? 'rep' : 'reps'}`;
 const libraryGroups = caseGroups.filter(group => ['all', 'easy', 'fundamentals', 'in-slot', 'advanced'].includes(group.id));
-const libraryOffsets = new Map();
+const caseListOffsets = new Map();
 const thumbnails = new Map();
+const historyDate = new Intl.DateTimeFormat(undefined, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
 const stageNames = ['Setup', 'Solve', 'Review'];
 const faceNames = { U: 'top', R: 'right', F: 'front', D: 'bottom', L: 'left', B: 'back' };
 const stickerNames = { D: 'white', F: 'green', R: 'orange', L: 'red', B: 'blue' };
@@ -55,6 +58,8 @@ let renderedBluetoothStatus;
 let renderedBattery;
 let accountBusy = false;
 let exportDays = '30';
+let historyView = 'cases';
+let historyDay;
 
 const trainer = new Trainer(update, result => {
   sessionCount++;
@@ -282,7 +287,7 @@ function setModifier(value) {
 function renderWork() {
   const focused = work.contains(document.activeElement) ? document.activeElement : null;
   const oldList = work.querySelector('.case-list');
-  if (oldList) libraryOffsets.set(oldList.dataset.group, oldList.scrollTop);
+  if (oldList) caseListOffsets.set(oldList.dataset.group, oldList.scrollTop);
   const previewOpen = preview?.scope === page &&
     (solutionsAreOpen() || (page === 'practice' && trainer.phase === 'results') ||
       (page === 'full' && (full.phase === 'review' || full.phase === 'drill-result')));
@@ -293,7 +298,8 @@ function renderWork() {
   renderedFullLog = page === 'full' ? full.log : undefined;
   work.innerHTML = { practice: practiceMarkup, full: fullMarkup, library: libraryMarkup, history: historyMarkup }[page]();
   hydrate(work);
-  if (page === 'library') work.querySelector('.case-list').scrollTop = libraryOffsets.get(filter.id) ?? 0;
+  const list = work.querySelector('.case-list');
+  if (list) list.scrollTop = caseListOffsets.get(list.dataset.group) ?? 0;
   if (focused) {
     const replacement = focused.id ? work.querySelector(`#${CSS.escape(focused.id)}`)
       : focused.dataset.filter ? work.querySelector(`[data-filter="${focused.dataset.filter}"]`)
@@ -318,9 +324,11 @@ function practiceMarkup() {
   return `<div class="practice-controls">
     <label for="practice-order">Practice order</label>
     <div class="select-wrap"><select id="practice-order">
+      ${order.mode === 'review' ? `<option value="review" selected>Review set · ${caseCount(order.group.items.length)}</option>` : ''}
       <option value="ordered" ${order.mode === 'ordered' ? 'selected' : ''}>In order</option>
       <optgroup label="Random practice">${caseGroups.map(group => `<option value="${group.id}" ${order.mode === group.id ? 'selected' : ''}>Random · ${group.label}</option>`).join('')}</optgroup>
     </select>${icon('ChevronDown')}</div>
+    ${order.mode === 'review' ? '<button class="text-button" data-action="end-review">End review</button>' : ''}
   </div>
   <div class="case-head">
     <div class="case-top"><div class="case-kicker">CASE ${number(item.id)} ${categoryBadge(item.category)}</div>
@@ -573,28 +581,76 @@ function fullSolutionsMarkup(step) {
     ${preview?.scope === 'full' ? walkthroughMarkup() : ''}`;
 }
 
+function caseRow(item, reps) {
+  if (!thumbnails.has(item.id)) thumbnails.set(item.id, caseThumbnail(item.start));
+  const thumbnail = thumbnails.get(item.id);
+  const count = reps === undefined ? '' : ` · <b class="case-reps">${repCount(reps)}</b>`;
+  return `<li><button class="case-item" ${reps === undefined ? 'data-case' : 'data-review-case'}="${item.id}">
+    <img class="case-thumbnail" src="${thumbnail.src}" alt="${thumbnail.description}" width="60" height="55" loading="lazy" decoding="async">
+    <span><span class="case-number">${number(item.id)}</span><strong>${item.title}</strong><small>${item.detail}${count}</small></span>
+    ${categoryBadge(item.category)}${icon('ChevronRight')}</button></li>`;
+}
+
 function libraryMarkup() {
   return `<div class="view-head"><h2>Choose a case</h2><p>${filter.items.length} cases · White down · Target pair highlighted</p></div>
     <div class="library-controls" aria-label="Filter cases">${libraryGroups.map(group => `<button class="filter" data-filter="${group.id}" aria-pressed="${filter === group}">${group.label}</button>`).join('')}</div>
-    <ol class="case-list" data-group="${filter.id}">${filter.items.map(item => {
-      if (!thumbnails.has(item.id)) thumbnails.set(item.id, caseThumbnail(item.start));
-      const thumbnail = thumbnails.get(item.id);
-      return `<li><button class="case-item" data-case="${item.id}"><img class="case-thumbnail" src="${thumbnail.src}" alt="${thumbnail.description}" width="60" height="55" loading="lazy" decoding="async"><span><span class="case-number">${number(item.id)}</span><strong>${item.title}</strong><small>${item.detail}</small></span>${categoryBadge(item.category)}${icon('ChevronRight')}</button></li>`;
-    }).join('')}</ol>`;
+    <ol class="case-list" data-group="${filter.id}">${filter.items.map(item => caseRow(item)).join('')}</ol>`;
 }
 
+const activePracticeDay = days => days.get(historyDay) ?? days.values().next().value;
+
 function historyMarkup() {
+  return `<div class="history-tabs" role="group" aria-label="History view">
+    <button id="history-cases-tab" class="filter" data-history-view="cases" aria-pressed="${historyView === 'cases'}">Case practice</button>
+    <button id="history-attempts-tab" class="filter" data-history-view="attempts" aria-pressed="${historyView === 'attempts'}">All attempts</button>
+    </div>
+    ${historyView === 'cases' ? practiceHistoryMarkup() : attemptHistoryMarkup()}
+    <div class="history-tools"><p class="history-meta" data-sync-status role="status"></p>
+    ${historyView === 'attempts' ? `<div class="actions"><label for="export-days">Export range</label><select id="export-days">
+        ${[['7', 'Past 7 days'], ['30', 'Past 30 days'], ['90', 'Past 90 days'], ['all', 'All available']].map(([value, label]) => `<option value="${value}" ${exportDays === value ? 'selected' : ''}>${label}</option>`).join('')}
+      </select><button class="button secondary" data-action="export-history">Export JSON</button></div>` : ''}
+    </div>`;
+}
+
+function practiceHistoryMarkup() {
+  const days = practiceDays(activity.attempts);
+  const selected = activePracticeDay(days);
+  if (!selected) return '<div class="view-head"><h2>Practiced cases</h2><p>Completed F2L practice cases will appear here.</p></div>';
+
+  const today = new Date();
+  const yesterday = new Date(today);
+  yesterday.setDate(yesterday.getDate() - 1);
+  const todayKey = today.toDateString();
+  const yesterdayKey = yesterday.toDateString();
+  return `<div class="view-head"><h2>Practiced cases</h2><p>${caseCount(selected.counts.size)} · ${repCount(selected.reps)} completed${activity.attempts.length === recentLimit ? ` · Based on your latest ${recentLimit} saved attempts` : ''}</p></div>
+    <div class="history-day">
+      <div class="history-day-field">
+        <label for="practice-day">Practice day</label>
+        <div class="select-wrap"><select id="practice-day">${[...days.values()].map(day => {
+          const prefix = day.key === todayKey ? 'Today · ' : day.key === yesterdayKey ? 'Yesterday · ' : '';
+          return `<option value="${day.key}" ${day === selected ? 'selected' : ''}>${prefix}${historyDate.format(day.date)}</option>`;
+        }).join('')}</select>${icon('ChevronDown')}</div>
+      </div>
+      <button class="button" data-action="review-day">${icon('RotateCcw')} ${selected.counts.size === 1 ? 'Practice this case' : 'Practice these cases'}</button>
+    </div>
+    <ol class="case-list practice-history-list" data-group="${selected.key}" aria-label="Cases practiced that day">${[...selected.counts].map(([item, reps]) => caseRow(item, reps)).join('')}</ol>`;
+}
+
+function attemptHistoryMarkup() {
   const counts = { practice: 0, full: 0, drill: 0 };
   for (const { kind } of activity.attempts) counts[kind]++;
   return `<div class="view-head"><h2>Attempts</h2><p>Showing up to ${recentLimit} recent attempts. ${activity.user ? 'Export a date range for analysis.' : 'Sign in to save future attempts across computers.'}</p></div>
     <div class="history-summary">${metric('F2L practice', counts.practice)}${metric('Cross + F2L', counts.full)}${metric('Pair retries', counts.drill)}</div>
-    <div class="history-body">${attemptTable(activity.attempts, true)}</div>
-    <div class="history-tools">
-      <p class="history-meta" data-sync-status role="status"></p>
-      <div class="actions"><label for="export-days">Export range</label><select id="export-days">
-        ${[['7', 'Past 7 days'], ['30', 'Past 30 days'], ['90', 'Past 90 days'], ['all', 'All available']].map(([value, label]) => `<option value="${value}" ${exportDays === value ? 'selected' : ''}>${label}</option>`).join('')}
-      </select><button class="button secondary" data-action="export-history">Export JSON</button></div>
-    </div>`;
+    <div class="history-body">${attemptTable(activity.attempts, true)}</div>`;
+}
+
+function reviewPracticeDay(caseId) {
+  const selected = activePracticeDay(practiceDays(activity.attempts));
+  if (!selected) return;
+  const items = [...selected.counts.keys()];
+  const item = items.find(item => item.id === caseId) ?? items[0];
+  order.review(items, item);
+  select(item);
 }
 
 function attemptTable(attempts, dates = false) {
@@ -644,6 +700,8 @@ function renderAccount() {
 
 function activityChanged({ attempts, preferences, account }) {
   if (account) {
+    historyDay = undefined;
+    if (order.mode === 'review') order.reset(activity.preferences.order, trainer.item);
     clearPreview();
     clearFullHint();
     full.clearReport();
@@ -654,7 +712,7 @@ function activityChanged({ attempts, preferences, account }) {
     renderSessionCount();
     renderTargetGuide();
   }
-  if (preferences) {
+  if (preferences && order.mode !== 'review') {
     const mode = activity.preferences.order ?? 'ordered';
     if (order.mode !== mode) order.reset(mode, trainer.item);
   }
@@ -832,6 +890,12 @@ const action = {
   account: accountAction,
   'sign-out': () => activity.cloud.signOut().catch(() => showNotice('Could not sign out. Try again.')),
   'export-history': exportHistory,
+  'review-day': () => reviewPracticeDay(),
+  'end-review': () => {
+    order.reset(activity.preferences.order, trainer.item);
+    renderWork();
+    $('#practice-order').focus({ preventScroll: true });
+  },
   close: () => dialog.close(),
   browse: () => go('library'),
   next: () => select(order.next(trainer.item)),
@@ -902,7 +966,7 @@ const action = {
 document.addEventListener('click', event => {
   const button = event.target.closest('button');
   if (!button) return;
-  const { view, turn, modifier: nextModifier, action: command, filter: nextFilter, case: caseId, solution, step, fullSolution, report } = button.dataset;
+  const { view, turn, modifier: nextModifier, action: command, filter: nextFilter, case: caseId, solution, step, fullSolution, report, historyView: nextHistoryView, reviewCase } = button.dataset;
   if (view) {
     stopPreview();
     go(view);
@@ -913,12 +977,18 @@ document.addEventListener('click', event => {
     const flag = nextModifier === 'prime' ? "'" : '2';
     setModifier(modifier === flag ? '' : flag);
   } else if (command) action[command]?.();
+  else if (nextHistoryView) {
+    if (historyView !== nextHistoryView) {
+      historyView = nextHistoryView;
+      renderWork();
+    }
+  } else if (reviewCase) reviewPracticeDay(Number(reviewCase));
   else if (nextFilter) {
     const group = libraryGroups.find(item => item.id === nextFilter);
     if (group && group !== filter) { filter = group; renderWork(); }
   } else if (caseId) {
     const item = cases[Number(caseId) - 1];
-    order.reset(order.mode, item);
+    order.reset(order.mode === 'review' ? activity.preferences.order : order.mode, item);
     select(item);
   } else if (report) openSavedReport(report);
   else if (solution !== undefined) chooseSolution(Number(solution));
@@ -931,13 +1001,18 @@ document.addEventListener('click', event => {
 
 document.addEventListener('change', event => {
   if (event.target.id === 'export-days') exportDays = event.target.value;
+  if (event.target.id === 'practice-day') {
+    historyDay = event.target.value;
+    renderWork();
+    return;
+  }
   if (event.target.id === 'full-target') {
     clearFullHint();
     full.targetSlot = event.target.value === '' ? null : Number(event.target.value);
     renderWork();
     return;
   }
-  if (event.target.id !== 'practice-order') return;
+  if (event.target.id !== 'practice-order' || event.target.value === 'review') return;
   order.reset(event.target.value);
   activity.setPreference('order', order.mode);
   if (order.group) select(order.next(trainer.item));
