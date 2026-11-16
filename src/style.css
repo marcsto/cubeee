@@ -134,6 +134,7 @@ h1 { font-size: clamp(38px, 4.1vw, 56px); line-height: 1.09; letter-spacing: -.0
 .pair-colors > i[data-color="orange"] { background: #f58558; }
 .pair-colors > i[data-color="red"] { background: #f86d87; }
 .pair-colors > i[data-color="blue"] { background: #6fa9ff; }
+.pair-colors > i[data-color="yellow"] { background: #f5e62d; }
 .case-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
 .case-nav { display: flex; gap: 5px; }
 .case-nav .icon-button { width: 30px; height: 29px; }
@@ -254,6 +255,17 @@ h1 { font-size: clamp(38px, 4.1vw, 56px); line-height: 1.09; letter-spacing: -.0
 .split-review { border-top: 1px solid var(--edge); }
 .split-review .demo { margin-bottom: 9px; }
 
+.grip-picker { margin-top: 10px; padding: 9px 10px; border: 1px solid #363d49; border-radius: 7px; background: #1a1f27; }
+.grip-hold, .preferred-grip { display: flex; flex-wrap: wrap; gap: 4px 8px; color: var(--muted); font-size: 11px; }
+.grip-hold strong, .preferred-grip strong { color: var(--ink); }
+.preferred-grip { margin: 9px 0 0; }
+.grip-front { display: flex; align-items: center; flex-wrap: wrap; gap: 5px; margin-top: 7px; }
+.grip-front > span, .grip-top label { margin-right: 3px; color: var(--muted); font-size: 10px; font-weight: 800; }
+.grip-color { display: inline-flex; align-items: center; gap: 5px; padding: 5px 7px; }
+.grip-more { margin-top: 7px; }
+.grip-more summary { width: fit-content; color: var(--muted); font-size: 10px; font-weight: 750; cursor: pointer; }
+.grip-more summary:hover { color: var(--ink); }
+.grip-top { display: flex; align-items: center; gap: 6px; margin-top: 6px; }
 .solutions { display: grid; gap: 6px; margin-top: 10px; }
 .solution-toggle { min-height: 32px; padding: 0 10px; font-size: 11px; }
 #during-solve-solutions { margin-top: 12px; padding-top: 8px; border-top: 1px solid var(--edge); }
@@ -334,6 +346,7 @@ dialog .actions { margin-top: 16px; }
 
 @media (max-width: 380px) {
   #account-label { display: none; }
+  .grip-front > span { flex-basis: 100%; }
   .nav-item [data-icon] { display: none; }
   .case-item { padding-inline: 10px; gap: 7px; }
   .case-item .case-category { display: none; }

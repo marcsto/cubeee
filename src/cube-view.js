@@ -315,7 +315,27 @@ export class CubeView {
       markers = { pieces: keys(current), slots: keys(destinations) };
     }
     drawCube(context, state, camera, project, { animation: this.animation, guideLayer, markers });
-    if (layer && !guideLayer) this.drawArrow(context, camera, project, unit);
+    if (guideLayer) this.drawHiddenArrow(context, state, width);
+    else if (layer) this.drawArrow(context, camera, project, unit);
+  }
+
+  drawHiddenArrow(context, state, width) {
+    const face = this.arrow[0];
+    const [normal, across, down] = axes[face];
+    const x = width - 29;
+    const y = 29;
+    const color = state[faces.indexOf(face) * 9 + 4];
+    context.save();
+    roundPolygon(context, [[x - 20, y - 20], [x + 20, y - 20], [x + 20, y + 20], [x - 20, y + 20]], 0.16);
+    context.fillStyle = '#111923';
+    context.fill();
+    context.strokeStyle = '#435366';
+    context.lineWidth = 1;
+    context.stroke();
+    context.fillStyle = palette[color][0];
+    context.fillRect(x - 4, y - 4, 8, 8);
+    this.drawArrow(context, { toward: normal }, vector => [x + dot(vector, across) * 12, y + dot(vector, down) * 12], 12);
+    context.restore();
   }
 
   drawArrow(context, camera, project, unit) {

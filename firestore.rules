@@ -23,12 +23,20 @@ service cloud.firestore {
         && (data.kind != 'practice' || (data.caseId is int && data.caseId > 0 && data.bestKnownMoves is int));
     }
 
+    function validSolution(key, choice) {
+      return (key.matches('case:[0-9]{1,3}') && choice is int && choice >= 0)
+        || (key.matches('pair:[0-9:,|]{1,160}') && choice is list && choice.size() <= 100);
+    }
+
     function validPreference(data) {
+      let value = data.value;
       return data.keys().hasOnly(['key', 'value']) && data.key is string
         && (data.key == 'order'
-          ? data.value in ['ordered', 'all', 'easy', 'fundamentals', 'white-up', 'in-slot', 'advanced', 'wrong-edge', 'wrong-corner']
-          : (data.key.matches('case:[0-9]{1,3}') && data.value is int && data.value >= 0)
-            || (data.key.matches('pair:[0-9:,|]{1,160}') && data.value is list && data.value.size() <= 100));
+          ? value in ['ordered', 'all', 'easy', 'fundamentals', 'white-up', 'in-slot', 'advanced', 'wrong-edge', 'wrong-corner']
+          : validSolution(data.key, value)
+            || (value is map && value.keys().hasOnly(['choice', 'grip'])
+              && validSolution(data.key, value.choice) && value.grip is string
+              && value.grip.matches('[UD][RFLB]|[RL][UFDB]|[FB][URDL]')));
     }
 
     match /users/{uid}/attempts/{id} {

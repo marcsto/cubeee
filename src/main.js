@@ -4,10 +4,11 @@ import '@fontsource/space-mono/latin-700.css';
 import './style.css';
 import { Activity, ArrowRight, Bluetooth, Box, Check, ChevronDown, ChevronLeft, ChevronRight, CircleAlert, CircleHelp, Clock, History, Keyboard, LayoutGrid, Move, Pause, Play, RefreshCw, RotateCcw, Scan, Star, Target, UserRound, Zap, X, createElement } from 'lucide';
 import { ActivityHistory, recentLimit, restoreReport, savedAttempt, savedReport } from './activity.js';
-import { crossSolved, invert, played, slotFaces, slotSolved, slots, solved } from './cube.js';
+import { crossSolved, faces, invert, played, slotFaces, slotSolved, slots, solved } from './cube.js';
 import { caseThumbnail, CubeView } from './cube-view.js';
 import { BluetoothCube, normalizeAddress } from './bluetooth.js';
 import { FullSolve } from './full-solve.js';
+import { frontColors, getGrip, gripMove } from './grip.js';
 import { caseGroups, practiceDays, PracticeOrder } from './practice-order.js';
 import { planPair } from './planner.js';
 import { matchesPieces, phasePieces, pieceState } from './solve-session.js';
@@ -33,7 +34,8 @@ const thumbnails = new Map();
 const historyDate = new Intl.DateTimeFormat(undefined, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
 const stageNames = ['Setup', 'Solve', 'Review'];
 const faceNames = { U: 'top', R: 'right', F: 'front', D: 'bottom', L: 'left', B: 'back' };
-const stickerNames = { D: 'white', F: 'green', R: 'orange', L: 'red', B: 'blue' };
+const stickerNames = { U: 'yellow', D: 'white', F: 'green', R: 'orange', L: 'red', B: 'blue' };
+const colorLabel = face => stickerNames[face][0].toUpperCase() + stickerNames[face].slice(1);
 const work = $('#work-panel');
 const live = new CubeView($('#live-canvas'));
 const dialog = $('#dialog');
@@ -47,8 +49,10 @@ let filter = libraryGroups[0];
 let modifier = '';
 let noticeTimer;
 let demo;
+let demoGrip;
 let preview = null;
 let previewTimer;
+let gripOverride;
 let revealedAttempt;
 let renderedPracticeStart;
 let renderedFullLog;
@@ -287,17 +291,20 @@ function setModifier(value) {
 function renderWork() {
   const focused = work.contains(document.activeElement) ? document.activeElement : null;
   const oldList = work.querySelector('.case-list');
+  const gripOptionsOpen = work.querySelector('.grip-more')?.open;
   if (oldList) caseListOffsets.set(oldList.dataset.group, oldList.scrollTop);
   const previewOpen = preview?.scope === page &&
     (solutionsAreOpen() || (page === 'practice' && trainer.phase === 'results') ||
       (page === 'full' && (full.phase === 'review' || full.phase === 'drill-result')));
-  if (demo && preview) preview.angle = [demo.yaw, demo.pitch];
+  const grip = previewOpen ? solutionGrip(preview.context) : undefined;
+  const angle = demo && grip === demoGrip ? [demo.yaw, demo.pitch] : null;
   demo?.destroy();
   demo = undefined;
   renderedPracticeStart = page === 'practice' ? trainer.caseStart : undefined;
   renderedFullLog = page === 'full' ? full.log : undefined;
   work.innerHTML = { practice: practiceMarkup, full: fullMarkup, library: libraryMarkup, history: historyMarkup }[page]();
   hydrate(work);
+  if (gripOptionsOpen) work.querySelector('.grip-more')?.setAttribute('open', '');
   const list = work.querySelector('.case-list');
   if (list) list.scrollTop = caseListOffsets.get(list.dataset.group) ?? 0;
   if (focused) {
@@ -308,8 +315,8 @@ function renderWork() {
   }
   if (previewOpen) {
     demo = new CubeView($('#demo-canvas'), { compact: true, followArrows: false });
-    if (preview.angle) [demo.yaw, demo.pitch] = preview.angle;
-    else demo.revealFace(preview.moves[0]?.[0]);
+    demoGrip = grip;
+    if (angle) [demo.yaw, demo.pitch] = angle;
     demo.setTargets(preview.targets);
     updatePreview();
   }
@@ -395,6 +402,7 @@ function solveMarkup() {
       ${solutionToggleMarkup()}
     </div>
     <p class="phase-copy">${description}</p>
+    ${solutionsAreOpen() ? '' : preferredGripMarkup(trainer.item)}
     <div class="ready-block"><strong data-timer>${time(0)} s</strong><small>${timerLabel}</small></div>
     <p class="your-turns" data-practice-turns ${turns.length ? '' : 'hidden'}>Your turns <code>${notation(turns)}</code></p>
     ${duringSolveSolutions(practiceSolutionsMarkup)}
@@ -427,10 +435,44 @@ function replayMarkup(scope) {
 
 function practiceSolutionsMarkup() {
   const { item } = trainer;
-  const preferred = activity.preferences[`case:${item.id}`] ?? -1;
+  const { choice: preferred } = preferredSolution(item);
+  const grip = solutionGrip(item);
   return `<p class="phase-copy">Select a solution to save it as preferred and watch it on the cube.</p>
-    <div class="solutions" role="group" aria-label="Suggested solutions">${item.solutions.map((moves, index) => `<button class="solution" data-solution="${index}" id="practice-solution-${index}" aria-pressed="${preferred === index}">${icon(index === preferred ? 'Star' : 'Play')}<code>${notation(moves)}</code><small>${moves.length} turns${index === preferred ? ' · Preferred' : ''}</small></button>`).join('')}</div>
+    ${gripMarkup(grip)}
+    <div class="solutions" role="group" aria-label="Suggested solutions">${item.solutions.map((moves, index) => `<button class="solution" data-solution="${index}" id="practice-solution-${index}" aria-pressed="${(preview?.choice ?? preferred) === index}">${icon(index === preferred ? 'Star' : 'Play')}<code>${gripNotation(moves, grip)}</code><small>${moves.length} turns${index === preferred ? ' · Preferred' : ''}</small></button>`).join('')}</div>
     ${preview?.scope === 'practice' ? walkthroughMarkup() : ''}`;
+}
+
+function gripNotation(moves, grip) {
+  return notation(moves.map(move => gripMove(move, grip)));
+}
+
+function holdLabel(grip) {
+  return `${grip.top === 'U' ? 'White down' : `${colorLabel(grip.top)} up`} · ${colorLabel(grip.front)} front`;
+}
+
+function preferredGripMarkup(context) {
+  const { grip } = preferredSolution(context);
+  if (grip.id === 'UF') return '';
+  return `<p class="preferred-grip">Preferred grip <strong>${holdLabel(grip)}</strong></p>`;
+}
+
+function gripMarkup(grip) {
+  return `<div class="grip-picker">
+    <p class="grip-hold">Hold your cube <strong>${holdLabel(grip)}</strong></p>
+    <div class="grip-front" role="group" aria-label="Front color">
+      <span>Front color</span>
+      ${frontColors(grip.top).map(face => `<button id="grip-front-${face}" class="filter grip-color" data-grip="${grip.top}${face}" aria-pressed="${face === grip.front}">
+        <span class="pair-colors" aria-hidden="true"><i data-color="${stickerNames[face]}"></i></span>${colorLabel(face)}</button>`).join('')}
+    </div>
+    <details class="grip-more"><summary>More orientations</summary>
+      <div class="grip-top"><label for="grip-top">Top color</label>
+        <div class="select-wrap"><select id="grip-top">
+          ${[...faces].map(face => `<option value="${face}" ${face === grip.top ? 'selected' : ''}>${colorLabel(face)}</option>`).join('')}
+        </select>${icon('ChevronDown')}</div>
+      </div>
+    </details>
+  </div>`;
 }
 
 function walkthroughMarkup() {
@@ -469,6 +511,7 @@ function fullMarkup() {
     return `<div class="phase-card" data-timed-pair="${phase}">
       <div class="section-line"><h3>${title}</h3>${solutionToggleMarkup()}</div>
       <p class="phase-copy">${description}</p>
+      ${solutionsAreOpen() ? '' : preferredGripMarkup(step)}
       <div class="ready-block"><strong data-full-timer>0.00 s</strong><small>${timerLabel}</small></div>
       ${fullTurnLog(log)}
       ${duringSolveSolutions(() => fullSolutionsMarkup(step))}
@@ -553,10 +596,23 @@ function fullPreferenceKey(step) {
   return `${[...step.slots].sort().join(',')}|${pieces.map(piece => `${piece}:${pieceState(step.start, piece)}`).join(',')}`;
 }
 
+function preferredSolution(context) {
+  const isCase = Number.isInteger(context.id);
+  const key = isCase ? `case:${context.id}` : `pair:${fullPreferenceKey(context)}`;
+  const value = activity.preferences[key];
+  const choice = typeof value === 'number' || Array.isArray(value) ? value : value?.choice;
+  const valid = isCase ? Number.isInteger(choice) && context.solutions[choice]
+    : Array.isArray(choice) && choice.length > 0 && choice.every(move => typeof move === 'string' && /^[URFDLB][2']?$/.test(move));
+  return { key, choice: valid ? choice : undefined, grip: getGrip(valid ? value?.grip : undefined) };
+}
+
+function solutionGrip(context) {
+  return gripOverride?.context === context ? gripOverride.grip : preferredSolution(context).grip;
+}
+
 function fullSolutions(step) {
   const { analysis } = step;
-  const saved = activity.preferences[`pair:${fullPreferenceKey(step)}`];
-  const preferred = Array.isArray(saved) && saved.every(move => typeof move === 'string' && /^[URFDLB][2']?$/.test(move)) ? saved : [];
+  const preferred = preferredSolution(step).choice ?? [];
   const preferredText = preferred.join(' ');
   const options = (analysis?.solutions ?? []).map((moves, index) => ({
     moves,
@@ -572,11 +628,12 @@ function fullSolutions(step) {
 
 function fullSolutionsMarkup(step) {
   const options = fullSolutions(step);
+  const grip = solutionGrip(step);
   const notice = step.analysis === null ? 'Finding solutions that restore the cross and earlier pairs.'
     : options.length ? 'Select a solution to save it as preferred and watch it on the cube.' : 'Solution comparison is unavailable for this split.';
   return `<p class="phase-copy">${notice}</p>
-    ${options.length ? `<div class="solutions" role="group" aria-label="Suggested solutions">${options.map(({ moves, label, preferred }, index) =>
-      `<button class="solution" data-full-solution="${index}" id="full-solution-${index}" aria-pressed="${preview?.scope === 'full' && preview.choice === moves.join(' ')}">${icon(preferred ? 'Star' : 'Play')}<code>${notation(moves)}</code><small>${moves.length} moves · ${label}${preferred ? ' · Preferred' : ''}</small></button>`
+    ${options.length ? `${gripMarkup(grip)}<div class="solutions" role="group" aria-label="Suggested solutions">${options.map(({ moves, label, preferred }, index) =>
+      `<button class="solution" data-full-solution="${index}" id="full-solution-${index}" aria-pressed="${preview?.context === step && preview.choice === moves.join(' ')}">${icon(preferred ? 'Star' : 'Play')}<code>${gripNotation(moves, grip)}</code><small>${moves.length} moves · ${label}${preferred ? ' · Preferred' : ''}</small></button>`
     ).join('')}</div>` : ''}
     ${preview?.scope === 'full' ? walkthroughMarkup() : ''}`;
 }
@@ -700,6 +757,7 @@ function renderAccount() {
 
 function activityChanged({ attempts, preferences, account }) {
   if (account) {
+    gripOverride = undefined;
     historyDay = undefined;
     if (order.mode === 'review') order.reset(activity.preferences.order, trainer.item);
     clearPreview();
@@ -819,6 +877,7 @@ async function showFullHint() {
 
 function select(item) {
   clearPreview();
+  gripOverride = undefined;
   const needsPracticeMode = mode !== 'practice';
   if (page !== 'practice') go('practice', item);
   if (!needsPracticeMode) trainer.select(item);
@@ -827,8 +886,14 @@ function select(item) {
 function updatePreview(transition) {
   if (!demo || !preview) return;
   const { index, moves } = preview;
-  demo.show(played(preview.start, moves.slice(0, index)), moves[index], transition);
-  $('#demo-progress').textContent = index === moves.length ? `Complete · ${index} turns` : `${index} / ${moves.length} · Next ${showMove(moves[index])}`;
+  const grip = demoGrip;
+  const next = moves[index] && gripMove(moves[index], grip);
+  const cube = played(preview.start, [...moves.slice(0, index), ...grip.rotation]);
+  const animation = transition && { before: played(transition.before, grip.rotation), move: gripMove(transition.move, grip) };
+  demo.show(cube, next, animation);
+  $('#demo-progress').textContent = next
+    ? `${index} / ${moves.length} · Next ${showMove(next)} (${stickerNames[moves[index][0]]})`
+    : `Complete · ${index} turns`;
   $('[data-action="demo-back"]').disabled = index === 0;
   $('[data-action="demo-forward"]').disabled = index === moves.length;
   const play = $('#demo-play');
@@ -853,18 +918,51 @@ function playPreview() {
   updatePreview();
 }
 
-function chooseSolution(index) {
-  activity.setPreference(`case:${trainer.item.id}`, index);
+function chooseSolution(index, remember = true) {
+  const item = trainer.item;
+  if (remember) saveSolution(item, index, solutionGrip(item));
   openPreview('practice', trainer.caseStart, trainer.item.solutions[index], index, [0]);
 }
 
-function chooseFullSolution(index) {
+function chooseFullSolution(index, remember = true) {
   const hint = fullIsSolving();
   const step = hint ? fullHint : full.step;
   const { moves } = fullSolutions(step)[index];
-  activity.setPreference(`pair:${fullPreferenceKey(step)}`, moves);
+  if (remember) saveSolution(step, moves, solutionGrip(step));
   const start = hint || full.phase === 'review' ? step.start : full.log.start;
   openPreview('full', start, moves, moves.join(' '), step.slots, hint);
+}
+
+function solutionContext() {
+  return page === 'practice' ? trainer.item : fullIsSolving() ? fullHint : full.step;
+}
+
+function saveSolution(context, choice, grip) {
+  const { key } = preferredSolution(context);
+  activity.setPreference(key, { choice, grip: grip.id });
+}
+
+function chooseGrip(id) {
+  const context = solutionContext();
+  const grip = getGrip(id);
+  if (!context) return;
+  if (grip === solutionGrip(context) && preview?.context === context) {
+    demo?.focusFace('F');
+    return;
+  }
+  gripOverride = { context, grip };
+  const preferred = preferredSolution(context);
+  if (preferred.choice !== undefined && preferred.grip !== grip) saveSolution(context, preferred.choice, grip);
+  if (preview?.context === context) {
+    stopPreview();
+    renderWork();
+  } else if (page === 'practice') {
+    chooseSolution(preferred.choice ?? 0, false);
+  } else {
+    const options = fullSolutions(context);
+    if (options.length) chooseFullSolution(Math.max(0, options.findIndex(option => option.preferred)), false);
+    else renderWork();
+  }
 }
 
 function replayAttempt() {
@@ -879,7 +977,7 @@ function replayAttempt() {
 
 function openPreview(scope, start, moves, choice, targets, hint = false) {
   stopPreview();
-  preview = { scope, start, moves, choice, targets, hint, index: 0 };
+  preview = { scope, context: solutionContext(), start, moves, choice, targets, hint, index: 0 };
   renderWork();
 }
 
@@ -966,7 +1064,7 @@ const action = {
 document.addEventListener('click', event => {
   const button = event.target.closest('button');
   if (!button) return;
-  const { view, turn, modifier: nextModifier, action: command, filter: nextFilter, case: caseId, solution, step, fullSolution, report, historyView: nextHistoryView, reviewCase } = button.dataset;
+  const { view, turn, modifier: nextModifier, action: command, filter: nextFilter, case: caseId, solution, step, fullSolution, report, historyView: nextHistoryView, reviewCase, grip } = button.dataset;
   if (view) {
     stopPreview();
     go(view);
@@ -982,7 +1080,8 @@ document.addEventListener('click', event => {
       historyView = nextHistoryView;
       renderWork();
     }
-  } else if (reviewCase) reviewPracticeDay(Number(reviewCase));
+  } else if (grip) chooseGrip(grip);
+  else if (reviewCase) reviewPracticeDay(Number(reviewCase));
   else if (nextFilter) {
     const group = libraryGroups.find(item => item.id === nextFilter);
     if (group && group !== filter) { filter = group; renderWork(); }
@@ -1000,6 +1099,13 @@ document.addEventListener('click', event => {
 });
 
 document.addEventListener('change', event => {
+  if (event.target.id === 'grip-top') {
+    const top = event.target.value;
+    const allowed = frontColors(top);
+    const { front } = solutionGrip(solutionContext());
+    chooseGrip(top + (allowed.includes(front) ? front : allowed[0]));
+    return;
+  }
   if (event.target.id === 'export-days') exportDays = event.target.value;
   if (event.target.id === 'practice-day') {
     historyDay = event.target.value;
