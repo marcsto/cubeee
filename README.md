@@ -6,7 +6,7 @@ Open [cubeee](https://marc.ai/cubeee/) in Chrome or Edge to pair a GAN i4. Turn 
 
 In F2L Practice, turn on **Virtual cube** to load each case immediately. Watch the on-screen cube and turn your connected GAN with white down and green facing you. On the completed pair's review screen, turn the left or right face for the next case or the top layer to retry. You can retry or advance to another case from any physical position. Turn off **Virtual cube** to return to guided setup using your GAN's current position.
 
-With the GAN i4 gyroscope on, Virtual cube follows whole-cube rotations. Hold white down with green facing you and choose **Align cube view** if the view needs recentering. The left, right, and top shortcuts use the faces from that grip. GAN i4's Burst mode keeps the gyroscope on.
+With the GAN i4 gyroscope on, use **Rotation tracking** to switch whole-cube tracking on or off. To set the level view, hold the cube flat with white down and green facing you, then choose **Align view**. The left, right, and top shortcuts use the faces from that grip. GAN i4's Burst mode keeps the gyroscope on.
 
 With the GAN disconnected, use the face buttons or the U, R, F, D, L, and B keys. Hold Shift for a counterclockwise turn or Alt for a half turn. The first detected turn stops the thinking timer and starts the execution timer. Quick consecutive quarter turns in the same direction count as a half turn.
 

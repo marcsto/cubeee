@@ -87,6 +87,10 @@ h1 { font-size: clamp(38px, 4.1vw, 56px); line-height: 1.09; letter-spacing: -.0
 .cube-stage canvas:active, .demo-stage canvas:active { cursor: grabbing; }
 .camera-control { position: absolute; inset: 14px 14px auto auto; background: #1a232de0; }
 .orientation { position: absolute; bottom: 15px; left: 16px; display: flex; align-items: center; gap: 7px; color: #bec7d4; font-size: 10px; font-weight: 750; padding: 6px 8px; border-radius: 6px; border: 1px solid #344151; background: #151d26ed; pointer-events: none; }
+.rotation-controls { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 8px 16px; border-bottom: 1px solid var(--edge); }
+.rotation-controls .button { min-height: 32px; padding-inline: 9px; gap: 6px; font-size: 11px; }
+.rotation-controls svg { width: 14px; height: 14px; }
+.rotation-toggle[aria-pressed="true"] strong { color: var(--green); }
 .orientation-dot, .green-dot { width: 7px; height: 7px; border-radius: 2px; background: #eeeee5; }
 .green-dot { background: #50c89d; }
 .orientation-separator { height: 10px; width: 1px; background: #455366; margin-inline: 2px; }

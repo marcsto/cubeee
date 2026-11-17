@@ -215,8 +215,12 @@ export class CubeView {
 
   setOrientation(orientation) {
     if (this.orientation === orientation) return;
-    if (!this.orientation || !orientation) this.referenceOrientation = orientation;
+    const trackingChanged = Boolean(this.orientation) !== Boolean(orientation);
     this.orientation = orientation;
+    if (trackingChanged) {
+      this.resetView();
+      return;
+    }
     if (this.orientationFrame) return;
     this.orientationFrame = requestAnimationFrame(() => {
       this.orientationFrame = 0;
@@ -230,7 +234,7 @@ export class CubeView {
   }
 
   focusFace(face) {
-    this.yaw = { R: 0.86, L: -0.78, B: 2.47 }[face] ?? 0.68;
+    this.yaw = { R: 0.86, L: -0.78, B: 2.47 }[face] ?? (this.orientation ? 0 : 0.68);
     this.pitch = face === 'D' ? -0.58 : 0.48;
     this.paint();
   }

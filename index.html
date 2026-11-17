@@ -52,10 +52,13 @@
           <div id="pair-guide" class="pair-guide" hidden></div>
           <div class="cube-stage">
             <canvas id="live-canvas" role="img" aria-label="Current cube sticker state. Drag to rotate the view."></canvas>
-            <button class="icon-button camera-control" data-action="camera" aria-label="Reset cube view" title="Reset cube view"><span data-icon="Scan"></span></button>
+            <button class="icon-button camera-control" id="cube-camera" data-action="camera" aria-label="Reset cube view" title="Reset cube view"><span data-icon="Scan"></span></button>
             <div class="orientation" id="cube-grip"><span class="orientation-dot"></span> White down <span class="orientation-separator"></span><span class="green-dot"></span> Green front</div>
-            <div class="orientation" id="cube-rotation" hidden>Rotation tracking</div>
             <span class="drag-hint"><span data-icon="Move"></span> Drag to orbit</span>
+          </div>
+          <div class="rotation-controls" id="cube-rotation-controls" hidden>
+            <button class="button secondary rotation-toggle" id="cube-rotation" data-action="rotation-tracking" aria-pressed="true">Rotation tracking <strong id="cube-rotation-state" aria-hidden="true">On</strong></button>
+            <button class="button ghost" id="cube-align" data-action="camera" aria-label="Align cube view" title="Hold the cube level with white down and green facing you, then align the view" hidden><span data-icon="Scan" aria-hidden="true"></span> Align view</button>
           </div>
           <div id="cube-input" class="cube-input"></div>
         </section>

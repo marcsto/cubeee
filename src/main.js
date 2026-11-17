@@ -40,6 +40,8 @@ const stickerNames = { U: 'yellow', D: 'white', F: 'green', R: 'orange', L: 'red
 const colorLabel = face => stickerNames[face][0].toUpperCase() + stickerNames[face].slice(1);
 const work = $('#work-panel');
 const live = new CubeView($('#live-canvas'));
+const rotationControls = $('#cube-rotation-controls');
+const rotationTrackingKey = 'cubeee:rotationTracking';
 const dialog = $('#dialog');
 
 const activity = new ActivityHistory(activityChanged, showNotice);
@@ -68,6 +70,8 @@ let accountBusy = false;
 let exportDays = '30';
 let historyView = 'cases';
 let historyDay;
+let rotationTracking = true;
+try { rotationTracking = localStorage.getItem(rotationTrackingKey) !== 'off'; } catch { /* Storage can be disabled. */ }
 
 const physicalTrainer = new Trainer(transition => {
   if (trainer === physicalTrainer) update(transition);
@@ -334,15 +338,17 @@ function renderConnection() {
 
 function updateCubeOrientation() {
   const orientation = trainer === virtualTrainer && bluetooth.status === 'connected' ? bluetooth.orientation : undefined;
-  const tracking = Boolean(orientation);
-  if (tracking !== Boolean(live.orientation)) {
+  const available = Boolean(orientation);
+  const tracking = available && rotationTracking;
+  if (rotationControls.hidden !== !available || tracking !== Boolean(live.orientation)) {
+    rotationControls.hidden = !available;
+    $('#cube-rotation').setAttribute('aria-pressed', String(tracking));
+    $('#cube-rotation-state').textContent = tracking ? 'On' : 'Off';
     $('#cube-grip').hidden = tracking;
-    $('#cube-rotation').hidden = !tracking;
-    const button = $('[data-action="camera"]');
-    button.setAttribute('aria-label', tracking ? 'Align cube view' : 'Reset cube view');
-    button.title = tracking ? 'Hold white down and green facing you, then align the cube view' : 'Reset cube view';
+    $('#cube-camera').hidden = tracking;
+    $('#cube-align').hidden = !tracking;
   }
-  live.setOrientation(orientation);
+  live.setOrientation(tracking ? orientation : undefined);
 }
 
 function setModifier(value) {
@@ -940,7 +946,7 @@ function showHelp() {
   openDialog('Cube controls', `<p>Hold the training cube with white down and green facing you. Keep this orientation as you follow the setup.</p><ul>
     <li>To wake the GAN i4, turn its white face. Open this site in Chrome or Edge and choose <strong>Connect GAN i4</strong>.</li>
     <li>Choose <strong>Virtual cube</strong> in F2L Practice to load each case on screen. Watch the screen and use your connected cube to turn.</li>
-    <li>With the gyroscope on, the virtual cube follows whole-cube rotations. Hold white down and green facing you, then choose <strong>Align cube view</strong> to recenter it.</li>
+    <li>Use <strong>Rotation tracking</strong> to turn gyroscope tracking on or off. To level the view, hold the cube flat with white down and green facing you, then choose <strong>Align view</strong>.</li>
     <li>With the GAN disconnected, press U, R, F, D, L, or B to turn a face. Hold Shift for a counterclockwise turn or Alt for a half turn. Use Enter to apply the next guided turn.</li>
     <li>Drag either cube to see its other faces.</li>
     <li>In Cross + F2L, the solve starts on the first turn. For each pair, thinking runs from the previous split to your next turn. Two consecutive quarter turns in the same direction count as one half turn.</li>
@@ -1114,6 +1120,11 @@ function openPreview(scope, start, moves, choice, targets, hint = false) {
 
 const action = {
   camera: () => live.resetView(trainer.expected?.[0]),
+  'rotation-tracking': () => {
+    rotationTracking = !rotationTracking;
+    try { localStorage.setItem(rotationTrackingKey, rotationTracking ? 'on' : 'off'); } catch { /* Storage can be disabled. */ }
+    updateCubeOrientation();
+  },
   'find-pair': () => live.focusTargets(),
   help: showHelp,
   account: accountAction,
