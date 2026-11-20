@@ -62,6 +62,7 @@ let gripOverride;
 let revealedAttempt;
 let renderedPracticeStart;
 let renderedFullLog;
+let reviewTopTurns = 0;
 let fullHint;
 let addressRequest;
 let renderedCubeStatus;
@@ -92,6 +93,7 @@ function recordPractice(result) {
 }
 
 const full = new FullSolve(physicalTrainer, () => {
+  if (full.phase !== 'review') reviewTopTurns = 0;
   if (page === 'full') renderWork();
 }, (kind, log, result) => {
   const details = { start: log.start.asString(), assisted: Boolean(log.assisted) };
@@ -109,8 +111,9 @@ const bluetooth = new BluetoothCube({
     if (renderConnection() && (page === 'practice' || page === 'full')) renderWork();
   },
   sync(cube, force, turnsSkipped) {
+    const stateChanged = cube.asString() !== physicalTrainer.cube.asString();
+    if (force || turnsSkipped || stateChanged) reviewTopTurns = 0;
     if (trainer === virtualTrainer) {
-      const stateChanged = cube.asString() !== physicalTrainer.cube.asString();
       physicalTrainer.sync(cube, force, true);
       if (!force && (turnsSkipped || stateChanged)) interruptVirtualPractice(missedPracticeTurn);
       if (force && trainer.phase === 'solving') {
@@ -118,13 +121,14 @@ const bluetooth = new BluetoothCube({
       }
       return;
     }
-    if (mode === 'full' && (force || cube.asString() !== trainer.cube.asString())) {
+    if (mode === 'full' && (force || stateChanged)) {
       full.interrupt('The cube state changed. Start a new attempt to record accurate splits.');
     }
     trainer.sync(cube, force, mode === 'full');
   },
   disconnect: resetAfterDisconnect,
   missedTurn() {
+    reviewTopTurns = 0;
     if (trainer === virtualTrainer) interruptVirtualPractice(missedPracticeTurn);
   },
   turn(move, local = performance.now(), device) {
@@ -144,6 +148,7 @@ const bluetooth = new BluetoothCube({
 });
 
 function resetAfterDisconnect() {
+  reviewTopTurns = 0;
   practiceGestureTurn = undefined;
   if (mode === 'full') {
     full.interrupt('The cube disconnected. Reconnect or start a new attempt in virtual mode.');
@@ -163,7 +168,10 @@ function interruptVirtualPractice(message) {
 function update(transition) {
   if (preview?.scope === 'practice' && preview.start !== trainer.caseStart) clearPreview();
   const previousPhase = full.phase;
-  if (mode === 'full' && transition) full.record(transition);
+  if (mode === 'full' && transition) {
+    if (page === 'full' && previousPhase === 'review') handleReviewTurn(transition.move);
+    else full.record(transition);
+  }
   live.show(trainer.cube, trainer.expected, transition);
   if (page === 'practice') updatePractice();
   if (page === 'full') updateFull(previousPhase);
@@ -273,6 +281,7 @@ function renderSessionCount() {
 }
 
 function go(destination, practiceItem = practiceTrainer.item) {
+  if (page !== destination) reviewTopTurns = 0;
   page = destination;
   const [title, description] = {
     practice: ['F2L Practice', 'Train recognition and execution, one pair at a time.'],
@@ -674,7 +683,8 @@ function fullReviewMarkup(warning) {
           <td>${entry.moves.length}${best ? `<small>${best.length} ${analysis.optimal ? 'optimal' : 'best found'}</small>` : analysis === null ? '<small>Comparing…</small>' : ''}</td></tr>`;
       }).join('')}</tbody></table></div>
     ${step ? fullStepMarkup(step) : ''}
-    <div class="phase-card full-start"><div class="actions"><button class="button" data-action="full-scramble">${icon('Move')} New scramble</button><button class="button secondary" data-action="full-start">Use current cube</button></div></div>`;
+    <div class="phase-card full-start"><div class="actions"><button class="button" data-action="full-scramble">${icon('Move')} New scramble</button><button class="button secondary" data-action="full-start">Use current cube</button></div>
+      <p class="phase-copy">After scrambling, turn the top layer four quarter turns in the same direction to use the current cube.</p></div>`;
 }
 
 function fullStepMarkup(step) {
@@ -1002,6 +1012,20 @@ function nextPracticeCase() {
   select(order.next(trainer.item));
 }
 
+function handleReviewTurn(move) {
+  if (move === 'U') reviewTopTurns = Math.max(0, reviewTopTurns) + 1;
+  else if (move === "U'") reviewTopTurns = Math.min(0, reviewTopTurns) - 1;
+  else reviewTopTurns = 0;
+  if (Math.abs(reviewTopTurns) === 4) startCurrentCube();
+}
+
+function startCurrentCube() {
+  clearPreview();
+  clearFullHint();
+  reviewTopTurns = 0;
+  full.startCurrent();
+}
+
 function handlePracticeGesture(move, local, device) {
   const previous = practiceGestureTurn;
   practiceGestureTurn = undefined;
@@ -1179,7 +1203,7 @@ const action = {
     for (let i = 0; trainer.expected && i < limit; i++) trainer.turn(trainer.expected);
   },
   'full-scramble': () => { clearPreview(); clearFullHint(); full.scramble(); },
-  'full-start': () => { clearPreview(); clearFullHint(); full.startCurrent(); },
+  'full-start': startCurrentCube,
   'full-cancel': () => { clearPreview(); clearFullHint(); full.interrupt(); update(); },
   'full-back': () => { clearPreview(); full.backToReview(); update(); },
   'full-drill': () => { clearPreview(); full.drill(); },
