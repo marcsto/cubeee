@@ -17,6 +17,8 @@ concurrency:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    env:
+      PAGES_ARTIFACT: github-pages-${{ github.run_attempt }}
     environment:
       name: github-pages
       url: ${{ steps.pages.outputs.page_url }}
@@ -31,6 +33,9 @@ jobs:
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v4
         with:
+          name: ${{ env.PAGES_ARTIFACT }}
           path: dist
       - uses: actions/deploy-pages@v4
         id: pages
+        with:
+          artifact_name: ${{ env.PAGES_ARTIFACT }}
