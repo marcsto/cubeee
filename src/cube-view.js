@@ -62,6 +62,10 @@ function cameraAt(yaw, pitch) {
   return { toward: [sy * cp, sp, cy * cp], right: [cy, 0, -sy], up: [-sy * sp, cp, -cy * sp] };
 }
 
+const guideYaw = Math.PI / 4;
+const guidePitch = 0.48;
+const guideCamera = cameraAt(guideYaw, guidePitch);
+
 function drawCube(context, state, camera, project, { animation, highlighted, guideLayer, wideGuide, markers } = {}) {
   const polygons = [];
   for (const piece of pieces) {
@@ -179,27 +183,27 @@ export function caseThumbnail(cube) {
 }
 
 export class CubeView {
-  yaw = 0.68;
-  pitch = 0.48;
+  yaw = guideYaw;
+  pitch = guidePitch;
   zoom = 1;
   frame = 0;
   orientationFrame = 0;
   targetSlots = [];
 
-  constructor(canvas, { compact = false, followArrows = true } = {}) {
+  constructor(canvas, { compact = false } = {}) {
     this.canvas = canvas;
     this.context = canvas.getContext('2d');
     this.compact = compact;
-    this.followArrows = followArrows;
     this.observer = new ResizeObserver(() => this.paint());
     this.observer.observe(canvas);
     let drag;
     canvas.addEventListener('pointerdown', event => {
+      if (this.fixedView) return;
       drag = [event.clientX, event.clientY, this.yaw, this.pitch];
       canvas.setPointerCapture(event.pointerId);
     });
     canvas.addEventListener('pointermove', event => {
-      if (!drag) return;
+      if (!drag || this.fixedView) return;
       this.yaw = drag[2] - (event.clientX - drag[0]) * 0.012;
       this.pitch = Math.max(-1.35, Math.min(1.35, drag[3] + (event.clientY - drag[1]) * 0.011));
       this.paint();
@@ -228,19 +232,15 @@ export class CubeView {
     });
   }
 
-  resetView(face) {
+  resetView() {
     this.referenceOrientation = this.orientation;
-    this.focusFace(face);
-  }
-
-  focusFace(face) {
-    this.yaw = { R: 0.86, L: -0.78, B: 2.47 }[face] ?? (this.orientation ? 0 : 0.68);
-    this.pitch = face === 'D' ? -0.58 : 0.48;
+    this.yaw = this.orientation ? 0 : guideYaw;
+    this.pitch = guidePitch;
     this.paint();
   }
 
-  revealFace(face) {
-    if (axes[face] && dot(axes[face][0], this.camera().toward) < 0.28) this.focusFace(face);
+  get fixedView() {
+    return this.compact || Boolean(this.arrow);
   }
 
   setTargets(slots) {
@@ -270,11 +270,14 @@ export class CubeView {
   }
 
   show(cube, arrow, transition) {
-    const previousArrow = this.arrow;
+    if (arrow && !this.fixedView) {
+      this.yaw = guideYaw;
+      this.pitch = guidePitch;
+    }
     this.cube = cube;
     this.state = cube.asString();
     this.arrow = arrow;
-    if (this.followArrows && arrow && previousArrow?.[0] !== arrow[0]) this.revealFace(turnFace(arrow));
+    this.canvas.toggleAttribute('data-fixed-view', this.fixedView);
     cancelAnimationFrame(this.frame);
     this.animation = null;
     const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -292,7 +295,7 @@ export class CubeView {
     const fullAngle = (turn === 3 ? 1 : -turn) * Math.PI / 2;
     const animate = time => {
       const t = Math.min(1, (time - started) / 226);
-      this.animation = t < 1 ? { before, cube: transition.before, axis, wholeCube, wide, angle: fullAngle * (1 - (1 - t) ** 3) } : null;
+      this.animation = t < 1 ? { before, cube: transition.before, guided: transition.guided, axis, wholeCube, wide, angle: fullAngle * (1 - (1 - t) ** 3) } : null;
       this.paint();
       if (t < 1) this.frame = requestAnimationFrame(animate);
     };
@@ -300,6 +303,7 @@ export class CubeView {
   }
 
   camera() {
+    if (this.fixedView || this.animation?.guided) return guideCamera;
     const camera = cameraAt(this.yaw, this.pitch);
     if (!this.orientation) return camera;
     // Use the inverse of the cube's relative rotation to keep projecting in cube coordinates.
@@ -342,7 +346,7 @@ export class CubeView {
 
     const state = this.animation?.before ?? this.state;
     const layer = this.animation ? null : axes[turnFace(this.arrow)]?.[0];
-    const arrowHidden = !this.followArrows && layer && dot(layer, camera.toward) < 0.065;
+    const arrowHidden = layer && dot(layer, camera.toward) < 0;
     const wideGuide = isWideTurn(this.arrow);
     const guideLayer = arrowHidden || wideGuide ? layer : null;
     let markers;
@@ -352,40 +356,36 @@ export class CubeView {
       markers = { pieces: keys(current), slots: keys(destinations) };
     }
     drawCube(context, state, camera, project, { animation: this.animation, guideLayer, wideGuide, markers });
-    if (arrowHidden) this.drawHiddenArrow(context, state, width);
-    else if (layer) this.drawArrow(context, camera, project, unit);
+    if (arrowHidden) this.drawHiddenArrow(context, layer, camera, project, unit);
+    else if (layer) this.drawArrow(context, project, unit);
   }
 
-  drawHiddenArrow(context, state, width) {
-    const face = turnFace(this.arrow);
-    const [normal, across, down] = axes[face];
-    const x = width - 29;
-    const y = 29;
-    const color = state[faces.indexOf(face) * 9 + 4];
-    context.save();
-    roundPolygon(context, [[x - 20, y - 20], [x + 20, y - 20], [x + 20, y + 20], [x - 20, y + 20]], 0.16);
-    context.fillStyle = '#111923';
-    context.fill();
-    context.strokeStyle = '#435366';
-    context.lineWidth = 1;
-    context.stroke();
-    context.fillStyle = palette[color][0];
-    context.fillRect(x - 4, y - 4, 8, 8);
-    this.drawArrow(context, { toward: normal }, vector => [x + dot(vector, across) * 12, y + dot(vector, down) * 12], 12);
-    context.restore();
+  drawHiddenArrow(context, normal, camera, project, unit) {
+    // Follow the two exposed strips of this layer around their shared corner.
+    let [first, second] = Object.values(axes).map(([axis]) => axis)
+      .filter(axis => dot(axis, normal) === 0 && dot(axis, camera.toward) > 0);
+    if (dot(cross(first, second), normal) > 0) [first, second] = [second, first];
+    const point = (a, b) => project(add(normal, add(scale(first, a), scale(second, b))));
+    const extent = this.arrow[1] === '2' ? 1.25 : 0.55;
+    const path = [point(1.51, -extent), point(1.51, 1.51), point(-extent, 1.51)];
+    if (this.arrow[1] === "'") path.reverse();
+    this.strokeArrow(context, path, unit);
   }
 
-  drawArrow(context, camera, project, unit) {
+  drawArrow(context, project, unit) {
     const [normal, across, down] = axes[turnFace(this.arrow)];
-    if (dot(normal, camera.toward) < 0.065) return;
     const direction = this.arrow[1] === "'" ? -1 : 1;
     const origin = scale(normal, 1.535);
     const arc = Array.from({ length: 34 }, (_, index) => {
       const theta = -1.16 + direction * index / 33 * (this.arrow[1] === '2' ? 5.65 : 4.14);
       return project(add(origin, add(scale(across, Math.cos(theta) * 1.067), scale(down, Math.sin(theta) * 1.067))));
     });
+    this.strokeArrow(context, arc, unit);
+  }
+
+  strokeArrow(context, arc, unit) {
     const tip = arc.at(-1);
-    const end = arc.at(-3);
+    const end = arc.at(-2);
     const directionRadians = Math.atan2(tip[1] - end[1], tip[0] - end[0]);
     const weight = Math.max(2.6, unit * 0.076);
     context.save();

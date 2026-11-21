@@ -375,7 +375,6 @@ function renderWork() {
     (solutionsAreOpen() || (page === 'practice' && trainer.phase === 'results') ||
       (page === 'full' && (full.phase === 'review' || full.phase === 'drill-result')));
   const grip = previewOpen ? solutionGrip(preview.context) : undefined;
-  const angle = demo && grip === demoGrip ? [demo.yaw, demo.pitch] : null;
   demo?.destroy();
   demo = undefined;
   renderedPracticeStart = page === 'practice' ? trainer.caseStart : undefined;
@@ -392,9 +391,8 @@ function renderWork() {
     replacement?.focus({ preventScroll: true });
   }
   if (previewOpen) {
-    demo = new CubeView($('#demo-canvas'), { compact: true, followArrows: false });
+    demo = new CubeView($('#demo-canvas'), { compact: true });
     demoGrip = grip;
-    if (angle) [demo.yaw, demo.pitch] = angle;
     demo.setTargets(preview.targets);
     updatePreview();
   }
@@ -581,7 +579,7 @@ function gripMarkup(grip) {
 }
 
 function walkthroughMarkup() {
-  return `<div class="demo"><div class="demo-stage"><canvas id="demo-canvas" role="img" aria-label="Solution walkthrough cube. Drag to see other faces."></canvas></div><div class="demo-toolbar">
+  return `<div class="demo"><div class="demo-stage"><canvas id="demo-canvas" role="img" aria-label="Solution walkthrough cube"></canvas></div><div class="demo-toolbar">
       <button class="icon-button" data-action="demo-reset" aria-label="Reset walkthrough" title="Reset walkthrough">${icon('RotateCcw')}</button>
       <button class="icon-button" data-action="demo-back" aria-label="Previous walkthrough turn" title="Previous walkthrough turn">${icon('ChevronLeft')}</button>
       <button class="icon-button" data-action="demo-play" id="demo-play" aria-label="Play walkthrough" title="Play walkthrough">${icon('Play')}</button>
@@ -1107,10 +1105,7 @@ function chooseGrip(id) {
   const context = solutionContext();
   const grip = getGrip(id);
   if (!context) return;
-  if (grip === solutionGrip(context) && preview?.context === context) {
-    demo?.focusFace('F');
-    return;
-  }
+  if (grip === solutionGrip(context) && preview?.context === context) return;
   gripOverride = { context, grip };
   const preferred = preferredSolution(context);
   if (preferred.choice !== undefined && preferred.grip !== grip) saveSolution(context, preferred.choice, grip);
@@ -1143,7 +1138,7 @@ function openPreview(scope, start, moves, choice, targets, hint = false) {
 }
 
 const action = {
-  camera: () => live.resetView(trainer.expected?.[0]),
+  camera: () => live.resetView(),
   'rotation-tracking': () => {
     rotationTracking = !rotationTracking;
     try { localStorage.setItem(rotationTrackingKey, rotationTracking ? 'on' : 'off'); } catch { /* Storage can be disabled. */ }

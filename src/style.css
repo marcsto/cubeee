@@ -83,8 +83,10 @@ h1 { font-size: clamp(38px, 4.1vw, 56px); line-height: 1.09; letter-spacing: -.0
 .live-badge.connected { color: var(--green); }
 .live-badge.connected .status-dot { background: var(--green); }
 .cube-stage { position: relative; height: 389px; overflow: hidden; border-block: 1px solid #272d36; background-color: #111820; background-image: radial-gradient(ellipse at 50% 44%, #202b36b0 0%, #141d2780 46%, #10161ebf 82%), linear-gradient(#758aa719 1px, transparent 1px), linear-gradient(90deg, #758aa719 1px, transparent 1px); background-size: auto, 23px 23px, 23px 23px; background-position: center; }
-.cube-stage canvas, .demo-stage canvas { display: block; width: 100%; height: 100%; cursor: grab; touch-action: none; }
-.cube-stage canvas:active, .demo-stage canvas:active { cursor: grabbing; }
+.cube-stage canvas, .demo-stage canvas { display: block; width: 100%; height: 100%; }
+.cube-stage canvas:not([data-fixed-view]) { cursor: grab; touch-action: none; }
+.cube-stage canvas:not([data-fixed-view]):active { cursor: grabbing; }
+.live-panel:has(canvas[data-fixed-view]) :is(.camera-control, .drag-hint, .rotation-controls, [data-action="find-pair"]) { display: none; }
 .camera-control { position: absolute; inset: 14px 14px auto auto; background: #1a232de0; }
 .orientation { position: absolute; bottom: 15px; left: 16px; display: flex; align-items: center; gap: 7px; color: #bec7d4; font-size: 10px; font-weight: 750; padding: 6px 8px; border-radius: 6px; border: 1px solid #344151; background: #151d26ed; pointer-events: none; }
 .rotation-controls { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 8px 16px; border-bottom: 1px solid var(--edge); }
