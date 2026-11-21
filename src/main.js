@@ -11,8 +11,9 @@ import { BluetoothCube, normalizeAddress } from './bluetooth.js';
 import { FullSolve } from './full-solve.js';
 import { canonicalCube, frontColors, getGrip, gripMove } from './grip.js';
 import { caseGroups, practiceDays, PracticeOrder } from './practice-order.js';
+import { PracticeGestures } from './practice-gestures.js';
 import { planPair } from './planner.js';
-import { elapsedBetween, matchesPieces, phasePieces, pieceState } from './solve-session.js';
+import { matchesPieces, phasePieces, pieceState } from './solve-session.js';
 import { Trainer, cases } from './trainer.js';
 import firebaseConfig from './firebase-config.json';
 
@@ -33,8 +34,8 @@ const libraryGroups = caseGroups.filter(group => ['all', 'easy', 'fundamentals',
 const caseListOffsets = new Map();
 const thumbnails = new Map();
 const historyDate = new Intl.DateTimeFormat(undefined, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
-const missedPracticeTurn = 'A Bluetooth turn was missed. Restart the case to record a complete attempt.';
-const halfTurnWindow = 200;
+const missedPracticeTurn = 'A Bluetooth turn was missed. Restart the pair to record a complete attempt.';
+const practiceGestures = new PracticeGestures();
 const faceNames = { U: 'top', R: 'right', F: 'front', D: 'bottom', L: 'left', B: 'back' };
 const stickerNames = { U: 'yellow', D: 'white', F: 'green', R: 'orange', L: 'red', B: 'blue' };
 const colorLabel = face => stickerNames[face][0].toUpperCase() + stickerNames[face].slice(1);
@@ -50,7 +51,6 @@ let sessionCount = 0;
 let page = 'practice';
 let mode = 'practice';
 let virtualPracticeIssue = '';
-let practiceGestureTurn;
 let filter = libraryGroups[0];
 let modifier = '';
 let noticeTimer;
@@ -78,8 +78,11 @@ const physicalTrainer = new Trainer(transition => {
   if (trainer === physicalTrainer) update(transition);
 }, recordPractice);
 const virtualTrainer = new Trainer(update, recordPractice);
+const virtualDrillTrainer = new Trainer(update);
+let virtualPairPractice = true;
 let practiceTrainer = physicalTrainer;
 let trainer = practiceTrainer;
+const usingVirtualCube = () => trainer !== physicalTrainer;
 
 function recordPractice(result) {
   sessionCount++;
@@ -93,8 +96,10 @@ function recordPractice(result) {
 }
 
 const full = new FullSolve(physicalTrainer, () => {
-  if (full.phase !== 'review') reviewTopTurns = 0;
+  if (mode !== 'full') return;
+  live.show(trainer.cube, trainer.expected);
   if (page === 'full') renderWork();
+  renderSessionCount();
 }, (kind, log, result) => {
   const details = { start: log.start.asString(), assisted: Boolean(log.assisted) };
   if (kind === 'full') {
@@ -113,11 +118,11 @@ const bluetooth = new BluetoothCube({
   sync(cube, force, turnsSkipped) {
     const stateChanged = cube.asString() !== physicalTrainer.cube.asString();
     if (force || turnsSkipped || stateChanged) reviewTopTurns = 0;
-    if (trainer === virtualTrainer) {
+    if (usingVirtualCube()) {
       physicalTrainer.sync(cube, force, true);
       if (!force && (turnsSkipped || stateChanged)) interruptVirtualPractice(missedPracticeTurn);
-      if (force && trainer.phase === 'solving') {
-        interruptVirtualPractice('The Bluetooth cube connected during this attempt. Restart the case to use it for turns.');
+      if (force && (trainer.phase === 'solving' || full.phase === 'drilling')) {
+        interruptVirtualPractice('The Bluetooth cube connected during this attempt. Restart the pair to use it for turns.');
       }
       return;
     }
@@ -129,10 +134,10 @@ const bluetooth = new BluetoothCube({
   disconnect: resetAfterDisconnect,
   missedTurn() {
     reviewTopTurns = 0;
-    if (trainer === virtualTrainer) interruptVirtualPractice(missedPracticeTurn);
+    if (usingVirtualCube()) interruptVirtualPractice(missedPracticeTurn);
   },
   turn(move, local = performance.now(), device) {
-    if (trainer === virtualTrainer) {
+    if (usingVirtualCube()) {
       physicalTrainer.turn(move, local, device);
       if (handlePracticeGesture(move, local, device)) return;
     }
@@ -148,10 +153,10 @@ const bluetooth = new BluetoothCube({
 });
 
 function resetAfterDisconnect() {
-  reviewTopTurns = 0;
-  practiceGestureTurn = undefined;
+  practiceGestures.reset();
   if (mode === 'full') {
     full.interrupt('The cube disconnected. Reconnect or start a new attempt in virtual mode.');
+    setFullTrainer(physicalTrainer);
     update();
   } else if (trainer === virtualTrainer) {
     interruptVirtualPractice('The Bluetooth cube disconnected. Reconnect or restart with the on-screen controls.');
@@ -159,6 +164,13 @@ function resetAfterDisconnect() {
 }
 
 function interruptVirtualPractice(message) {
+  if (mode === 'full') {
+    if (!drillIsSolving()) return;
+    full.interrupt(message);
+    setFullTrainer(physicalTrainer);
+    update();
+    return;
+  }
   if (!practiceIsSolving()) return;
   virtualPracticeIssue = message;
   virtualTrainer.free();
@@ -299,9 +311,7 @@ function go(destination, practiceItem = practiceTrainer.item) {
   if (destination === 'full' && mode !== 'full') {
     clearPreview();
     mode = 'full';
-    trainer = physicalTrainer;
-    trainer.free();
-    live.show(trainer.cube, null);
+    setFullTrainer(physicalTrainer);
   } else if (destination === 'practice' && mode === 'full') {
     clearPreview();
     clearFullHint();
@@ -316,7 +326,7 @@ function go(destination, practiceItem = practiceTrainer.item) {
 }
 
 function renderConnection() {
-  const virtual = trainer === virtualTrainer;
+  const virtual = usingVirtualCube();
   const awaitingState = bluetooth.awaitingState;
   const status = `${bluetooth.status}:${virtual}:${awaitingState}`;
   const statusChanged = renderedCubeStatus !== status;
@@ -346,7 +356,7 @@ function renderConnection() {
 }
 
 function updateCubeOrientation() {
-  const orientation = trainer === virtualTrainer && bluetooth.status === 'connected' ? bluetooth.orientation : undefined;
+  const orientation = usingVirtualCube() && bluetooth.status === 'connected' ? bluetooth.orientation : undefined;
   const available = Boolean(orientation);
   const tracking = available && rotationTracking;
   if (rotationControls.hidden !== !available || tracking !== Boolean(live.orientation)) {
@@ -589,6 +599,17 @@ function walkthroughMarkup() {
 }
 
 function fullMarkup() {
+  const controls = full.phase.includes('drill') ? `<div class="practice-controls">
+    <span>${full.step.slots.map(slot => slots[slot]).join(' · ')} practice</span>${pairPracticeToggleMarkup()}
+  </div>` : '';
+  return controls + fullContentMarkup();
+}
+
+function pairPracticeToggleMarkup() {
+  return `<button id="virtual-pair-practice" class="button ghost practice-mode" data-action="virtual-pair-practice" aria-pressed="${virtualPairPractice}" title="Load this pair directly on the virtual cube">${icon('Box')} Virtual cube</button>`;
+}
+
+function fullContentMarkup() {
   const { phase, log, step, report, error } = full;
   const warning = error ? `<p class="instruction error" role="alert">${error}</p>` : '';
   if (phase === 'review') return fullReviewMarkup(warning);
@@ -607,6 +628,7 @@ function fullMarkup() {
       ${replayMarkup('full')}
       <div class="split-metrics">${metric('Thinking', time(think), 's')}${metric('Execution', time(execution), 's')}${metric('Total', time(total), 's')}</div>
       ${fullSolutionsMarkup(step)}
+      ${usingVirtualCube() && bluetooth.status === 'connected' ? '<p class="phase-copy">Turn the top layer to retry this pair. Left and right turns stay on this result.</p>' : ''}
       <div class="actions"><button class="button" data-action="full-drill">Try again</button><button class="button secondary" data-action="full-back">Back to breakdown</button></div></div>`;
   }
   if (drillIsSolving()) {
@@ -618,7 +640,7 @@ function fullMarkup() {
       <div class="ready-block"><strong data-full-timer>0.00 s</strong><small>${timerLabel}</small></div>
       ${fullTurnLog(log)}
       ${duringSolveSolutions(() => fullSolutionsMarkup(step))}
-      <div class="actions"><button class="button ghost" data-action="full-back">Cancel attempt</button></div></div>`;
+      <div class="actions"><button class="button secondary" data-action="full-drill">${icon('RotateCcw')} Restart pair</button><button class="button ghost" data-action="full-back">Back to breakdown</button></div></div>`;
   }
   if (fullIsSolving()) {
     return `<div class="phase-card" data-full-solve>
@@ -641,8 +663,14 @@ function fullMarkup() {
 }
 
 function drillSolveStatus() {
+  let description = 'Thinking time is running. Your first turn starts execution.';
+  if (usingVirtualCube()) {
+    description = bluetooth.status === 'connected'
+      ? 'The recorded position is ready. Turn your Bluetooth cube to practice.'
+      : 'The recorded position is ready. Use the face buttons or keyboard to practice.';
+  }
   return full.phase === 'drill-ready'
-    ? { title: 'Ready to retry the pair', description: 'Thinking time is running. Your first turn starts execution.', timerLabel: 'Thinking time' }
+    ? { title: 'Ready to practice the pair', description, timerLabel: 'Thinking time' }
     : { title: 'Solving the pair', description: 'Insert the pair and restore the cross and earlier pairs.', timerLabel: 'Execution time' };
 }
 
@@ -662,7 +690,7 @@ function fullTargetMarkup() {
 function fullReviewMarkup(warning) {
   const { report, step, selected } = full;
   const cross = report.steps.find(entry => entry.kind === 'cross');
-  return `<div class="view-head"><h2>Solve breakdown</h2><p>Select a pair to see solutions and set it up again.</p></div>
+  return `<div class="view-head"><h2>Solve breakdown</h2><p>Select a pair to see solutions and practice it again.</p></div>
     ${warning}
     <div class="history-summary">${metric('Total time', time(report.total), 's')}${metric('Cross time', time(cross.timing.total), 's')}${metric('Total moves', report.moves.length)}</div>
     ${report.alreadySolved.length ? `<p class="split-note">Already solved at the start: ${report.alreadySolved.map(slot => slots[slot].toLowerCase()).join(', ')}.</p>` : ''}
@@ -691,7 +719,7 @@ function fullStepMarkup(step) {
     <p class="your-turns">Your turns <code>${notation(step.moves)}</code> · ${step.moves.length} moves</p>
     ${replayMarkup('full')}
     ${fullSolutionsMarkup(step)}
-    <div class="actions"><button class="button" data-action="full-drill">${icon('RotateCcw')} Practice this pair</button></div>
+    <div class="actions"><button class="button" data-action="full-drill">${icon('RotateCcw')} ${step.slots.length === 1 ? 'Practice this pair' : 'Practice these pairs'}</button>${pairPracticeToggleMarkup()}</div>
   </div>`;
 }
 
@@ -876,6 +904,7 @@ function activityChanged({ attempts, preferences, account }) {
     clearPreview();
     clearFullHint();
     full.clearReport();
+    if (mode === 'full') setFullTrainer(physicalTrainer);
     if (mode === 'practice' && trainer.phase === 'results') startPractice(trainer.item);
     sessionCount = 0;
     full.completed = 0;
@@ -937,6 +966,7 @@ function openSavedReport(id) {
     clearFullHint();
     full.interrupt();
     go('full');
+    setFullTrainer(physicalTrainer);
     full.review(report);
     renderTargetGuide();
   } catch {
@@ -954,6 +984,7 @@ function showHelp() {
   openDialog('Cube controls', `<p>Hold the training cube with white down and green facing you. Keep this orientation as you follow the setup.</p><ul>
     <li>To wake the GAN i4, turn its white face. Open this site in Chrome or Edge and choose <strong>Connect GAN i4</strong>.</li>
     <li>Choose <strong>Virtual cube</strong> in F2L Practice to load each case on screen. Watch the screen and use your connected cube to turn.</li>
+    <li>In the Cross + F2L breakdown, select a pair and choose <strong>Practice this pair</strong>. Virtual cube loads its original position immediately. After solving it, turn the top layer to retry; left and right turns keep you on the same pair. Turn off Virtual cube for guided setup on your physical cube.</li>
     <li>Use <strong>Rotation tracking</strong> to turn gyroscope tracking on or off. To level the view, hold the cube flat with white down and green facing you, then choose <strong>Align view</strong>.</li>
     <li>With the GAN disconnected, press U, R, F, D, L, or B to turn a face. Hold Shift for a counterclockwise turn or Alt for a half turn. Use Enter to apply the next guided turn.</li>
     <li>Drag either cube to see its other faces.</li>
@@ -1000,7 +1031,7 @@ function select(item) {
 
 function startPractice(item) {
   const virtual = trainer === virtualTrainer;
-  practiceGestureTurn = undefined;
+  practiceGestures.reset();
   virtualPracticeIssue = '';
   trainer.select(item, { virtual });
   if (virtual && bluetooth.awaitingState) interruptVirtualPractice(missedPracticeTurn);
@@ -1008,6 +1039,17 @@ function startPractice(item) {
 
 function nextPracticeCase() {
   select(order.next(trainer.item));
+}
+
+function setFullTrainer(next) {
+  reviewTopTurns = 0;
+  if (trainer !== next) trainer.free();
+  trainer = next;
+  trainer.free();
+  full.trainer = trainer;
+  practiceGestures.reset();
+  live.show(trainer.cube, null);
+  renderConnection();
 }
 
 function handleReviewTurn(move) {
@@ -1020,24 +1062,35 @@ function handleReviewTurn(move) {
 function startCurrentCube() {
   clearPreview();
   clearFullHint();
-  reviewTopTurns = 0;
+  setFullTrainer(physicalTrainer);
   full.startCurrent();
 }
 
+function startPairDrill() {
+  clearPreview();
+  if (!full.step) return;
+  if (bluetooth.awaitingState) {
+    full.interrupt('Sync your Bluetooth cube before starting another pair attempt.');
+    setFullTrainer(physicalTrainer);
+    update();
+    return;
+  }
+  setFullTrainer(virtualPairPractice ? virtualDrillTrainer : physicalTrainer);
+  full.drill({ virtual: virtualPairPractice });
+}
+
 function handlePracticeGesture(move, local, device) {
-  const previous = practiceGestureTurn;
-  practiceGestureTurn = undefined;
-  const face = turnFace(move);
-  if (page !== 'practice' || !['U', 'L', 'R'].includes(face)) return false;
-
-  // The GAN can report a half turn as two quarter turns.
-  if (trainer.phase === 'ready' && previous?.move === move && elapsedBetween(previous, { local, device }) <= halfTurnWindow) return true;
-  if (trainer.phase !== 'results') return false;
-
-  if (face === 'U') select(trainer.item);
-  else nextPracticeCase();
-  if (move[1] !== '2') practiceGestureTurn = { move, local, device };
-  return true;
+  const pairPractice = page === 'full' && trainer === virtualDrillTrainer;
+  if (!pairPractice && page !== 'practice') {
+    practiceGestures.reset();
+    return false;
+  }
+  return practiceGestures.handle({ move, local, device }, {
+    ready: pairPractice ? full.phase === 'drill-ready' : trainer.phase === 'ready',
+    complete: pairPractice ? full.phase === 'drill-result' : trainer.phase === 'results',
+    retry: pairPractice ? startPairDrill : () => select(trainer.item),
+    next: pairPractice ? undefined : nextPracticeCase,
+  });
 }
 
 function updatePreview(transition) {
@@ -1197,11 +1250,16 @@ const action = {
     const limit = trainer.route.length + trainer.mistakes.length + 1;
     for (let i = 0; trainer.expected && i < limit; i++) trainer.turn(trainer.expected);
   },
-  'full-scramble': () => { clearPreview(); clearFullHint(); full.scramble(); },
+  'full-scramble': () => { clearPreview(); clearFullHint(); setFullTrainer(physicalTrainer); full.scramble(); },
   'full-start': startCurrentCube,
-  'full-cancel': () => { clearPreview(); clearFullHint(); full.interrupt(); update(); },
-  'full-back': () => { clearPreview(); full.backToReview(); update(); },
-  'full-drill': () => { clearPreview(); full.drill(); },
+  'full-cancel': () => { clearPreview(); clearFullHint(); full.interrupt(); setFullTrainer(physicalTrainer); update(); },
+  'full-back': () => { clearPreview(); full.backToReview(); setFullTrainer(physicalTrainer); update(); },
+  'full-drill': startPairDrill,
+  'virtual-pair-practice': () => {
+    virtualPairPractice = !virtualPairPractice;
+    if (full.phase.includes('drill')) startPairDrill();
+    else renderWork();
+  },
   connect: () => {
     if (bluetooth.status === 'connected') {
       openDialog('GAN i4 connected', `<p id="device-name"></p><div class="actions"><button class="button secondary" data-action="resync">${icon('RefreshCw')} Sync state</button><button class="button ghost" data-action="disconnect">Disconnect</button></div>`);

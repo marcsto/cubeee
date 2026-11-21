@@ -6,6 +6,8 @@ Open [cubeee](https://marc.ai/cubeee/) in Chrome or Edge to pair a GAN i4. Turn 
 
 In F2L Practice, turn on **Virtual cube** to load each case immediately. Watch the on-screen cube and turn your connected GAN with white down and green facing you. On the completed pair's review screen, turn the left or right face for the next case or the top layer to retry. You can retry or advance to another case from any physical position. Turn off **Virtual cube** to return to guided setup using your GAN's current position.
 
+In a **Cross + F2L** solve breakdown, select a pair and choose **Practice this pair**. Virtual cube is on by default and loads the exact position from that split, including the earlier pairs. Solve it using your connected GAN or the on-screen controls. On the result screen, turn the top layer to retry the same pair; left and right turns are ignored. **Restart pair** resets an unfinished attempt, and **Back to breakdown** lets you pick another pair. Turn off **Virtual cube** for guided setup on your physical cube.
+
 With the GAN i4 gyroscope on, use **Rotation tracking** to switch whole-cube tracking on or off. To set the level view, hold the cube flat with white down and green facing you, then choose **Align view**. The left, right, and top shortcuts use the faces from that grip. GAN i4's Burst mode keeps the gyroscope on.
 
 With the GAN disconnected, use the face buttons or the U, R, F, D, L, and B keys. Hold Shift for a counterclockwise turn or Alt for a half turn. The first detected turn stops the thinking timer and starts the execution timer. Quick consecutive quarter turns in the same direction count as a half turn.

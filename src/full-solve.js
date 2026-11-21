@@ -146,11 +146,18 @@ export class FullSolve {
     this.change();
   }
 
-  async drill() {
+  async drill({ virtual = false } = {}) {
     const step = this.step;
     if (!step) return;
     const generation = ++this.generation;
     this.trainer.free();
+    if (virtual) {
+      this.trainer.cube = step.start.clone();
+      this.trainer.journal = null;
+      this.arm('drill-ready', { local: performance.now(), device: null });
+      this.change();
+      return;
+    }
     const snapshot = this.trainer.cube.clone();
     const pieces = phasePieces(step.targetSlots);
     const reached = cube => matchesPieces(cube, step.start, pieces);
