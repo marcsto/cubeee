@@ -60,6 +60,7 @@ let preview = null;
 let previewTimer;
 let gripOverride;
 let revealedAttempt;
+let slotHintShown = false;
 let renderedPracticeStart;
 let renderedFullLog;
 let reviewTopTurns = 0;
@@ -88,7 +89,7 @@ function recordPractice(result) {
   sessionCount++;
   activity.record(savedAttempt('practice', result, result.sequence, {
     caseId: result.id,
-    slots: [0],
+    slots: [trainer.item.slot],
     start: trainer.caseStart.asString(),
     assisted: Boolean(trainer.solveLog.assisted),
     bestKnownMoves: Math.min(...trainer.item.solutions.map(algorithmMoveCount)),
@@ -184,7 +185,7 @@ function update(transition) {
     if (page === 'full' && previousPhase === 'review') handleReviewTurn(transition.move);
     else full.record(transition);
   }
-  live.show(trainer.cube, trainer.expected, transition);
+  live.show(trainer.cube, trainer.expected, transition, mode === 'practice' && trainer.item.varied);
   if (page === 'practice') updatePractice();
   if (page === 'full') updateFull(previousPhase);
   renderTargetGuide();
@@ -261,7 +262,10 @@ function updateFull(previousPhase) {
 }
 
 function visibleTargets() {
-  if (page === 'practice') return trainer === virtualTrainer ? [] : [0];
+  if (page === 'practice') {
+    if (trainer.item.varied) return slotHintShown || trainer.phase === 'results' ? [trainer.item.slot] : [];
+    return trainer === virtualTrainer ? [] : [trainer.item.slot];
+  }
   if (page !== 'full') return [];
   if (full.phase === 'review' || full.phase.includes('drill')) return full.step?.slots ?? [];
   return full.targetSlot !== null && (full.phase === 'ready' || full.phase === 'solving') ? [full.targetSlot] : [];
@@ -275,10 +279,20 @@ function renderTargetGuide() {
   const targets = visibleTargets();
   live.setTargets(targets);
   const guide = $('#pair-guide');
-  const key = targets.join(',');
+  const varied = page === 'practice' && trainer.item.varied;
+  const key = varied ? `practice-${trainer.item.slot}-${slotHintShown}-${trainer.phase}` : targets.join(',');
   if ((guide.dataset.targets ?? '') === key) return;
   guide.dataset.targets = key;
-  guide.hidden = targets.length === 0;
+  guide.hidden = !varied && targets.length === 0;
+  if (varied) {
+    const slot = trainer.item.slot;
+    const colors = pairColors(slot);
+    guide.innerHTML = `<div class="target-details"><span class="target-caption">Target pair</span>
+      <div class="target-row"><span class="pair-colors" aria-hidden="true">${colors.map(color => `<i data-color="${color}"></i>`).join('')}</span>
+      <span>${colors.join(', ')}</span>${targets.length ? `<strong>${slots[slot]}</strong>` : ''}</div></div>
+      ${practiceIsSolving() ? `<button class="button ghost solution-toggle" data-action="slot-hint" aria-pressed="${slotHintShown}">${slotHintShown ? 'Hide slot' : 'Show slot'}</button>` : ''}`;
+    return;
+  }
   guide.innerHTML = targets.length ? `<div class="target-details"><span class="target-caption">${targets.length === 1 ? 'Target pair' : 'Target pairs'}</span>
     ${targets.map(slot => `<div class="target-row"><span class="pair-colors" aria-hidden="true">${pairColors(slot).map(color => `<i data-color="${color}"></i>`).join('')}</span><strong>${slots[slot]}</strong><span>${pairColors(slot).join(', ')}</span></div>`).join('')}
     <small><i class="marker-key"></i> Pieces <i class="marker-key destination"></i> Slot</small></div>
@@ -356,7 +370,8 @@ function renderConnection() {
 }
 
 function updateCubeOrientation() {
-  const orientation = usingVirtualCube() && bluetooth.status === 'connected' ? bluetooth.orientation : undefined;
+  const fixedPracticeView = mode === 'practice' && trainer.item.varied;
+  const orientation = !fixedPracticeView && usingVirtualCube() && bluetooth.status === 'connected' ? bluetooth.orientation : undefined;
   const available = Boolean(orientation);
   const tracking = available && rotationTracking;
   if (rotationControls.hidden !== !available || tracking !== Boolean(live.orientation)) {
@@ -433,7 +448,7 @@ function practiceMarkup() {
     <div class="case-top"><div class="case-kicker">CASE ${number(item.id)} ${categoryBadge(item.category)}</div>
       <div class="case-nav"><button class="icon-button" data-action="previous" title="Previous case" aria-label="Previous case" ${order.canGoBack ? '' : 'disabled'}>${icon('ChevronLeft')}</button><button class="icon-button" data-action="next" title="Next case" aria-label="Next case">${icon('ChevronRight')}</button></div>
     </div>
-    <h2>${item.title}</h2><p>${item.detail}</p>
+    <h2>${item.title}</h2>${item.varied ? '' : `<p>${item.detail}</p>`}
   </div>
   <div class="stepper" aria-label="Practice progress">${stages.map((name, index) => `<div class="step ${index === stage ? 'active' : index < stage ? 'done' : ''}" ${index === stage ? 'aria-current="step"' : ''}><i>${index < stage ? icon('Check') : index + 1}</i>${name}</div>`).join('')}</div>
   ${phase === 'results' ? reviewMarkup() : solving ? solveMarkup() : virtualPractice ? interruptedPracticeMarkup() : setupMarkup()}
@@ -485,7 +500,7 @@ function practiceSolveStatus() {
     : 'Use the face buttons or keyboard. Your first turn starts execution.';
   return trainer.phase === 'ready'
     ? { title: 'Ready to solve', description, timerLabel: 'Thinking time' }
-    : { title: 'Solving the pair', description: 'Finish the front-right pair and restore the white cross and any solved slots.', timerLabel: 'Execution time' };
+    : { title: 'Solving the pair', description: 'Insert the target pair and restore the white cross and any previously solved slots.', timerLabel: 'Execution time' };
 }
 
 function interruptedPracticeMarkup() {
@@ -1021,24 +1036,30 @@ async function showFullHint() {
   if (fullHint === hint && page === 'full' && fullIsSolving()) renderWork();
 }
 
-function select(item) {
+function select(item, exactStart) {
   clearPreview();
   gripOverride = undefined;
   const needsPracticeMode = mode !== 'practice';
   if (page !== 'practice') go('practice', item);
-  if (!needsPracticeMode) startPractice(item);
+  if (!needsPracticeMode) startPractice(item, exactStart);
 }
 
-function startPractice(item) {
+function startPractice(item, exactStart) {
+  slotHintShown = false;
   const virtual = trainer === virtualTrainer;
   practiceGestures.reset();
   virtualPracticeIssue = '';
-  trainer.select(item, { virtual });
+  trainer.select(item, { virtual, exactStart });
+  updateCubeOrientation();
   if (virtual && bluetooth.awaitingState) interruptVirtualPractice(missedPracticeTurn);
 }
 
 function nextPracticeCase() {
   select(order.next(trainer.item));
+}
+
+function retryPracticeCase() {
+  select(trainer.item, trainer.caseStart ?? trainer.exactStart);
 }
 
 function setFullTrainer(next) {
@@ -1088,7 +1109,7 @@ function handlePracticeGesture(move, local, device) {
   return practiceGestures.handle({ move, local, device }, {
     ready: pairPractice ? full.phase === 'drill-ready' : trainer.phase === 'ready',
     complete: pairPractice ? full.phase === 'drill-result' : trainer.phase === 'results',
-    retry: pairPractice ? startPairDrill : () => select(trainer.item),
+    retry: pairPractice ? startPairDrill : retryPracticeCase,
     next: pairPractice ? undefined : nextPracticeCase,
   });
 }
@@ -1133,7 +1154,7 @@ function playPreview() {
 function chooseSolution(index, remember = true) {
   const item = trainer.item;
   if (remember) saveSolution(item, index, solutionGrip(item));
-  openPreview('practice', trainer.caseStart, trainer.item.solutions[index], index, [0]);
+  openPreview('practice', trainer.caseStart, item.solutions[index], index, [item.slot]);
 }
 
 function chooseFullSolution(index, remember = true) {
@@ -1176,7 +1197,7 @@ function chooseGrip(id) {
 
 function replayAttempt() {
   if (page === 'practice') {
-    openPreview('practice', trainer.caseStart, trainer.result.sequence, 'attempt', [0]);
+    openPreview('practice', trainer.caseStart, trainer.result.sequence, 'attempt', [trainer.item.slot]);
   } else {
     const { step } = full;
     const { start, moves } = full.phase === 'review' ? step : full.log;
@@ -1198,6 +1219,12 @@ const action = {
     updateCubeOrientation();
   },
   'find-pair': () => live.focusTargets(),
+  'slot-hint': () => {
+    slotHintShown = !slotHintShown;
+    if (slotHintShown && trainer.solveLog) trainer.solveLog.assisted = true;
+    renderTargetGuide();
+    $('[data-action="slot-hint"]')?.focus({ preventScroll: true });
+  },
   help: showHelp,
   account: accountAction,
   'sign-out': () => activity.cloud.signOut().catch(() => showNotice('Could not sign out. Try again.')),
@@ -1212,7 +1239,7 @@ const action = {
   browse: () => go('library'),
   next: nextPracticeCase,
   previous: () => select(order.previous(trainer.item)),
-  retry: () => select(trainer.item),
+  retry: retryPracticeCase,
   'virtual-practice': () => {
     const item = trainer.item;
     trainer.free();
@@ -1349,6 +1376,7 @@ document.addEventListener('change', event => {
   order.reset(event.target.value);
   activity.setPreference('order', order.mode);
   if (order.group) select(order.next(trainer.item));
+  else if (trainer.item.varied) select(cases[trainer.item.id - 1]);
   else renderWork();
   $('#practice-order')?.focus({ preventScroll: true });
 });

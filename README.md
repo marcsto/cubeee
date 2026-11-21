@@ -1,10 +1,12 @@
 # cubeee
 
-cubeee is a browser-based F2L trainer with 41 standard cases and 24 advanced cases. It guides a front-right pair setup with white down and green facing you. Cross + F2L records the white cross and each pair as a separate split so you can review, compare, and retry pairs.
+cubeee is a browser-based F2L trainer with 41 standard cases and 24 advanced cases. Practice with white down and green facing you. Cross + F2L records the white cross and each pair as a separate split so you can review, compare, and retry pairs.
 
 Open [cubeee](https://marc.ai/cubeee/) in Chrome or Edge to pair a GAN i4. Turn the white face to wake it and choose **Connect GAN i4**. If the browser asks for the Bluetooth MAC address, use the address shown in CubeStation's device details and disconnect CubeStation before pairing. Connect once while signed in to save the cube's address to your account. On a different computer, sign in with the same account and select the cube in the browser's Bluetooth picker.
 
 In F2L Practice, turn on **Virtual cube** to load each case immediately. Watch the on-screen cube and turn your connected GAN with white down and green facing you. On the completed pair's review screen, turn the left or right face for the next case or the top layer to retry. You can retry or advance to another case from any physical position. Turn off **Virtual cube** to return to guided setup using your GAN's current position.
+
+Random practice varies the target slot across all four sides and varies the top-layer alignment when the target corner or edge is on top. Use the listed colors to find the pair, or choose **Show slot** for a hint. **Next case** deals a new position. **Try again** repeats the same start. Picking a case from the library opens its standard front-right setup.
 
 In a **Cross + F2L** solve breakdown, select a pair and choose **Practice this pair**. Virtual cube is on by default and loads the exact position from that split, including the earlier pairs. Solve it using your connected GAN or the on-screen controls. On the result screen, turn the top layer to retry the same pair; left and right turns are ignored. **Restart pair** resets an unfinished attempt, and **Back to breakdown** lets you pick another pair. Turn off **Virtual cube** for guided setup on your physical cube.
 

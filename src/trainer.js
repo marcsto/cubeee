@@ -1,6 +1,7 @@
 import catalogue from './cases.json' with { type: 'json' };
 import { Cube, f2lPattern, f2lSolved, invert, played, restoredPair, simplify, slotSolved, solved, turnPower } from './cube.js';
-import { cubeSkillsSolutions } from './cubeskills.js';
+import { cubeSkillsSolutions, simplifyOpeningUTurns } from './cubeskills.js';
+import { getGrip, gripMove } from './grip.js';
 import { planRoute } from './planner.js';
 import { RecordedTurns } from './solve-session.js';
 
@@ -10,8 +11,25 @@ export const cases = catalogue.map(item => {
   const preserve = [1, 2, 3].filter(slot => slotSolved(start, slot));
   const guide = new Set(cubeSkillsSolutions(start, solved, 0, [0, ...preserve]).map(moves => moves.join(' ')));
   const solutions = [...new Set([...item.solutions, ...guide])].map(text => text.split(' '));
-  return { ...item, setup, start, pattern: f2lPattern(start), preserve, solutions, cubeSkills: guide };
+  return { ...item, slot: 0, setup, start, pattern: f2lPattern(start), preserve, solutions, cubeSkills: guide };
 });
+
+const slotGrips = ['UF', 'UR', 'UB', 'UL'].map(getGrip);
+const topTurns = [[], ['U'], ['U2'], ["U'"]];
+
+export function practicePosition(item, slot, top) {
+  // Remap the turns from solved so the centers stay fixed while the pair changes slots.
+  const grip = slotGrips[slot];
+  const rotated = moves => moves.map(move => gripMove(move, grip));
+  const offset = topTurns[top];
+  const setup = simplify([...rotated(item.setup), ...offset]);
+  const start = played(solved, setup);
+  const solutions = item.solutions.map(moves => simplifyOpeningUTurns([...invert(offset), ...rotated(moves)]));
+  const cubeSkills = new Set(solutions.flatMap((moves, i) =>
+    item.cubeSkills.has(item.solutions[i].join(' ')) ? [moves.join(' ')] : []));
+  const preserve = [0, 1, 2, 3].filter(other => other !== slot && slotSolved(start, other));
+  return { ...item, varied: true, slot, setup, start, pattern: f2lPattern(start), preserve, solutions, cubeSkills };
+}
 
 export class Trainer {
   cube = new Cube();
@@ -57,8 +75,14 @@ export class Trainer {
     this.onUpdate();
   }
 
-  async select(item, { virtual = false } = {}) {
+  matchesStart(cube) {
+    return this.exactStart ? this.exactStart.asString() === cube.asString() : f2lPattern(cube) === this.item.pattern;
+  }
+
+  async select(item, { virtual = false, exactStart } = {}) {
     const generation = ++this.generation;
+    const undo = exactStart && this.solveLog && invert(this.solveLog.moves);
+    this.exactStart = exactStart;
     this.item = item;
     this.phase = 'planning';
     this.guided = undefined;
@@ -71,8 +95,8 @@ export class Trainer {
     this.solveLog = undefined;
     this.result = undefined;
     this.caseStart = undefined;
-    if (virtual) this.cube = item.start.clone();
-    if (virtual || f2lPattern(this.cube) === item.pattern) {
+    if (virtual) this.cube = (exactStart ?? item.start).clone();
+    if (virtual || this.matchesStart(this.cube)) {
       this.arm({ local: performance.now(), device: null });
       this.onUpdate();
       return;
@@ -80,25 +104,26 @@ export class Trainer {
 
     if (f2lSolved(this.cube)) this.journal = [];
     let route = this.journal && simplify([...invert(this.journal), ...item.setup]);
+    if (exactStart) route = undo && this.matchesStart(played(this.cube, undo)) ? undo : null;
     if (!route || route.length > item.setup.length + 12) {
       const current = this.cube.asString();
       this.onUpdate();
       let planned;
       try {
-        planned = await planRoute(this.cube, { setup: item.setup });
+        planned = await planRoute(this.cube, exactStart ? { target: exactStart } : { setup: item.setup });
       } catch {
         // The recorded route remains available when a worker cannot start.
       }
       if (generation !== this.generation || current !== this.cube.asString()) return;
       if (planned && (!route || planned.length < route.length)) route = planned;
     }
-    if (!route || f2lPattern(played(this.cube, route)) !== item.pattern) {
+    if (!route || !this.matchesStart(played(this.cube, route))) {
       this.phase = 'error';
     } else {
       let target = this.cube;
       const firstMatch = route.findIndex(move => {
         target = played(target, [move]);
-        return f2lPattern(target) === item.pattern;
+        return this.matchesStart(target);
       });
       this.route = route.slice(0, firstMatch + 1);
       this.phase = 'setup';
@@ -113,7 +138,7 @@ export class Trainer {
     if (free) {
       this.free();
       this.onUpdate();
-    } else this.select(this.item);
+    } else this.select(this.item, { exactStart: this.exactStart });
   }
 
   finishSetup(mark) {
@@ -145,7 +170,7 @@ export class Trainer {
     if (f2lSolved(this.cube)) this.journal = [];
 
     if (this.phase === 'planning' || this.phase === 'error') {
-      this.select(this.item);
+      this.select(this.item, { exactStart: this.exactStart });
     } else if (this.phase === 'setup') {
       this.trackSetup(move, before, { local, device });
     } else if (this.phase === 'ready' || this.phase === 'solving') {
@@ -155,7 +180,7 @@ export class Trainer {
   }
 
   trackSetup(move, before, mark) {
-    const reached = this.guided ? this.guided.reached(this.cube) : f2lPattern(this.cube) === this.item.pattern;
+    const reached = this.guided ? this.guided.reached(this.cube) : this.matchesStart(this.cube);
     if (reached) {
       this.finishSetup(mark);
       return;
@@ -185,7 +210,7 @@ export class Trainer {
       this.first = this.solveLog.first;
       this.phase = 'solving';
     }
-    if (!restoredPair(this.cube, this.item.preserve)) return;
+    if (!restoredPair(this.cube, this.item.preserve, this.item.slot)) return;
     const { think, execution } = this.solveLog.timing();
     const sequence = this.solveLog.moves;
     this.result = {

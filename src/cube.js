@@ -75,8 +75,8 @@ export function f2lPattern(cube) {
   return signature;
 }
 
-export function restoredPair(cube, preserve) {
-  return crossSolved(cube) && slotSolved(cube, 0) && preserve.every(slot => slotSolved(cube, slot));
+export function restoredPair(cube, preserve, slot = 0) {
+  return crossSolved(cube) && slotSolved(cube, slot) && preserve.every(other => slotSolved(cube, other));
 }
 
 export function validFacelets(facelets) {

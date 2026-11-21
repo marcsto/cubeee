@@ -1,4 +1,4 @@
-import { cases } from './trainer.js';
+import { cases, practicePosition } from './trainer.js';
 
 export const caseGroups = [
   { id: 'all', label: 'All cases', items: cases },
@@ -37,6 +37,8 @@ function shuffled(items) {
 }
 
 export class PracticeOrder {
+  lastPositions = new Map();
+
   constructor(mode) {
     this.reset(mode);
   }
@@ -53,10 +55,11 @@ export class PracticeOrder {
 
   resetDeck(current) {
     this.mode = this.group?.id ?? 'ordered';
-    const included = this.group?.items.includes(current);
+    const included = this.group?.items.some(item => item.id === current?.id);
+    if (included && !current.varied) this.lastPositions.set(current.id, 0);
     this.history = included ? [current] : [];
     this.position = this.history.length - 1;
-    this.remaining = this.group ? shuffled(this.group.items.filter(item => item !== current)) : [];
+    this.remaining = this.group ? shuffled(this.group.items.filter(item => item.id !== current?.id)) : [];
   }
 
   get canGoBack() {
@@ -70,10 +73,19 @@ export class PracticeOrder {
       if (!this.remaining.length) this.remaining = shuffled(this.group.items);
       // Starting a new pass should immediately give the learner a different case.
       const last = this.remaining.length - 1;
-      if (newPass && last > 0 && this.remaining[last] === current) {
+      if (newPass && last > 0 && this.remaining[last].id === current?.id) {
         [this.remaining[last], this.remaining[0]] = [this.remaining[0], this.remaining[last]];
       }
-      this.history.push(this.remaining.pop());
+      const item = this.remaining.pop();
+      const onTop = item.start.cp.indexOf(4) < 4 || item.start.ep.indexOf(8) < 4;
+      const alignments = onTop ? 4 : 1;
+      const count = 4 * alignments;
+      const lastPosition = this.lastPositions.get(item.id);
+      // Draw uniformly from the positions other than this case's last start.
+      let position = Math.floor(Math.random() * (lastPosition === undefined ? count : count - 1));
+      if (lastPosition !== undefined && position >= lastPosition) position++;
+      this.lastPositions.set(item.id, position);
+      this.history.push(practicePosition(item, Math.floor(position / alignments), position % alignments));
     }
     return this.history[++this.position];
   }

@@ -240,7 +240,7 @@ export class CubeView {
   }
 
   get fixedView() {
-    return this.compact || Boolean(this.arrow);
+    return this.compact || this.locked || Boolean(this.arrow);
   }
 
   setTargets(slots) {
@@ -269,7 +269,7 @@ export class CubeView {
     this.paint();
   }
 
-  show(cube, arrow, transition) {
+  show(cube, arrow, transition, locked = false) {
     if (arrow && !this.fixedView) {
       this.yaw = guideYaw;
       this.pitch = guidePitch;
@@ -277,6 +277,7 @@ export class CubeView {
     this.cube = cube;
     this.state = cube.asString();
     this.arrow = arrow;
+    this.locked = locked;
     this.canvas.toggleAttribute('data-fixed-view', this.fixedView);
     cancelAnimationFrame(this.frame);
     this.animation = null;
