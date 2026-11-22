@@ -14,7 +14,7 @@ In both F2L Practice and Cross + F2L pair practice, drag the virtual cube with a
 
 With the GAN disconnected, use the face buttons or the U, R, F, D, L, and B keys. Hold Shift for a counterclockwise turn or Alt for a half turn. The first detected turn stops the thinking timer and starts the execution timer. Quick consecutive quarter turns in the same direction count as a half turn.
 
-Pick a **Front color** above the suggested solutions to match how you hold the cube. **More orientations** lets you choose the top color. The walkthrough and notation use that grip, and cubeee remembers it with your preferred solution.
+Solutions open by default during pair practice. As you turn the cube, each solution underlines its matching moves in green. Choose **Hide solutions** to practice from memory. Open **Grip** below the solutions to choose the front and top colors. The walkthrough and notation use that grip, and cubeee remembers it with your preferred solution.
 
 The suggested solutions include algorithms from the [CubeSkills F2L guide](https://www.cubeskills.com/uploads/pdf/tutorials/f2l.pdf) by Feliks Zemdegs and Andy Klise. They cover all 41 standard cases and appear in Cross + F2L review when they solve the split and preserve the completed pieces. Opening U turns are aligned to the current setup.
 

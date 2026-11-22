@@ -14,6 +14,7 @@ import { caseGroups, practiceDays, PracticeOrder } from './practice-order.js';
 import { PracticeGestures } from './practice-gestures.js';
 import { planPair } from './planner.js';
 import { matchesPieces, phasePieces, pieceState } from './solve-session.js';
+import { matchedSolutionMoves, recordedFaceTurns, solutionFaceTurns } from './solution-progress.js';
 import { Trainer, cases } from './trainer.js';
 import firebaseConfig from './firebase-config.json';
 
@@ -59,7 +60,7 @@ let demoGrip;
 let preview = null;
 let previewTimer;
 let gripOverride;
-let revealedAttempt;
+let showPairSolutions = true;
 let slotHintShown = false;
 let renderedPracticeStart;
 let renderedFullLog;
@@ -204,14 +205,28 @@ function fullIsSolving() {
   return full.phase === 'ready' || full.phase === 'solving';
 }
 
-function solutionAttempt() {
-  if (page === 'practice' && practiceIsSolving()) return trainer.caseStart;
-  if (page === 'full') return drillIsSolving() ? full.log : fullIsSolving() ? fullHint : undefined;
+function solutionsAreOpen() {
+  if (page === 'full' && fullIsSolving()) return Boolean(fullHint);
+  return showPairSolutions && ((page === 'practice' && practiceIsSolving()) || (page === 'full' && drillIsSolving()));
 }
 
-function solutionsAreOpen() {
-  const attempt = solutionAttempt();
-  return Boolean(attempt && attempt === revealedAttempt);
+function updateSolutionProgress() {
+  const rows = work.querySelectorAll('[data-face-turns]');
+  if (!rows.length) return;
+  let log, offset = 0;
+  if (page === 'practice') log = trainer.solveLog;
+  else if (page === 'full' && full.phase.includes('drill')) log = full.log;
+  else if (page === 'full' && fullHint && fullIsSolving()) {
+    log = fullHint.log;
+    offset = fullHint.turnOffset;
+  }
+  if (!log) return;
+  if (solutionsAreOpen()) log.assisted = true;
+  const turns = recordedFaceTurns(log.turns.slice(offset));
+  for (const row of rows) {
+    const matched = matchedSolutionMoves(row.dataset.faceTurns.split(','), turns);
+    Array.from(row.children).forEach((token, index) => token.classList.toggle('matched', index < matched));
+  }
 }
 
 function updateTimedPair(panel, attempt) {
@@ -228,6 +243,7 @@ function updateTimedPair(panel, attempt) {
   log.hidden = turns.length === 0;
   log.querySelector('code').textContent = notation(turns);
   $('[data-metric="moves"]').textContent = turns.length || '—';
+  updateSolutionProgress();
 }
 
 function updatePractice() {
@@ -256,6 +272,7 @@ function updateFull(previousPhase) {
     const log = solve.querySelector('[data-practice-turns]');
     log.hidden = !full.log.first;
     log.querySelector('code').textContent = notation(full.log.moves);
+    updateSolutionProgress();
     const target = $('#full-target');
     target.closest('.target-control').hidden = !full.crossReached;
     target.value = full.targetSlot ?? '';
@@ -405,8 +422,10 @@ function renderWork() {
   demo = undefined;
   renderedPracticeStart = page === 'practice' ? trainer.caseStart : undefined;
   renderedFullLog = page === 'full' ? full.log : undefined;
+  work.closest('.page').classList.toggle('pair-practice', page === 'practice' || (page === 'full' && full.phase.includes('drill')));
   work.innerHTML = { practice: practiceMarkup, full: fullMarkup, library: libraryMarkup, history: historyMarkup }[page]();
   hydrate(work);
+  updateSolutionProgress();
   if (gripOptionsOpen) work.querySelector('.grip-more')?.setAttribute('open', '');
   const list = work.querySelector('.case-list');
   if (list) list.scrollTop = caseListOffsets.get(list.dataset.group) ?? 0;
@@ -451,7 +470,7 @@ function practiceMarkup() {
     </div>
     <h2>${item.title}</h2>${item.varied ? '' : `<p>${item.detail}</p>`}
   </div>
-  <div class="stepper" aria-label="Practice progress">${stages.map((name, index) => `<div class="step ${index === stage ? 'active' : index < stage ? 'done' : ''}" ${index === stage ? 'aria-current="step"' : ''}><i>${index < stage ? icon('Check') : index + 1}</i>${name}</div>`).join('')}</div>
+  ${solving || result ? '' : `<div class="stepper" aria-label="Practice progress">${stages.map((name, index) => `<div class="step ${index === stage ? 'active' : index < stage ? 'done' : ''}" ${index === stage ? 'aria-current="step"' : ''}><i>${index < stage ? icon('Check') : index + 1}</i>${name}</div>`).join('')}</div>`}
   ${phase === 'results' ? reviewMarkup() : solving ? timedPairMarkup() : virtualPractice ? interruptedPracticeMarkup() : setupMarkup()}
   ${pairMetricsMarkup(trainer.turns.length, result)}`;
 }
@@ -500,9 +519,9 @@ function setupMarkup(kind = 'case') {
 }
 
 function pairSolveStatus(log) {
-  const description = !usingVirtualCube() ? 'Your first turn ends thinking time and starts execution.' : bluetooth.status === 'connected'
-    ? 'Watch the virtual cube and turn your Bluetooth cube. Your first turn starts execution.'
-    : 'Use the face buttons or keyboard. Your first turn starts execution.';
+  const description = bluetooth.status === 'connected'
+    ? 'Turn your GAN to start execution.'
+    : 'Turn a face with the buttons or keyboard to begin.';
   return !log.first
     ? { title: 'Ready to solve', description, timerLabel: 'Thinking time' }
     : { title: 'Solving the pair', description: 'Solve the target and restore the white cross and any previously solved slots.', timerLabel: 'Execution time' };
@@ -524,13 +543,12 @@ function timedPairMarkup() {
   const navigation = drill ? '<button class="button ghost" data-action="full-back">Back to breakdown</button>'
     : `<button class="button ghost" data-action="next">Next case ${icon('ChevronRight')}</button>`;
   return `<div class="phase-card" data-timed-pair="${log.first ? 'solving' : 'ready'}">
-    <div class="section-line"><h3>${title}</h3>${solutionToggleMarkup()}</div>
+    <div class="section-line"><h3>${title}</h3><div class="ready-block"><small>${timerLabel}</small><strong data-timer>0.00 s</strong></div></div>
     <p class="phase-copy">${description}</p>
     ${solutionsAreOpen() ? '' : preferredGripMarkup(context)}
-    <div class="ready-block"><strong data-timer>0.00 s</strong><small>${timerLabel}</small></div>
+    <div class="actions pair-actions"><button class="button secondary" data-action="${restart}">${icon('RotateCcw')} Restart</button>${navigation}${solutionToggleMarkup()}</div>
     ${turnLogMarkup(log)}
     ${duringSolveSolutions(drill ? () => fullSolutionsMarkup(context) : practiceSolutionsMarkup)}
-    <div class="actions"><button class="button secondary" data-action="${restart}">${icon('RotateCcw')} Restart ${drill ? 'pair' : 'case'}</button>${navigation}</div>
   </div>`;
 }
 
@@ -540,9 +558,9 @@ function reviewMarkup() {
   return `<div class="phase-card" data-practice-result><div class="section-line"><h3>Pair solved</h3><span class="live-badge connected">${icon('Check')} Complete</span></div>
     ${gestureHint}
     <p class="your-turns">Your turns <code>${notation(trainer.result.sequence)}</code></p>
+    <div class="actions"><button class="button" data-action="retry">${icon('RotateCcw')} Try again</button><button class="button secondary" data-action="next">Next case ${icon('ArrowRight')}</button></div>
     ${replayMarkup('practice')}
     ${practiceSolutionsMarkup()}
-    <div class="actions"><button class="button" data-action="retry">${icon('RotateCcw')} Try again</button><button class="button secondary" data-action="next">Next case ${icon('ArrowRight')}</button></div>
   </div>`;
 }
 
@@ -564,12 +582,11 @@ function practiceSolutionsMarkup() {
   const { item } = trainer;
   const { choice: preferred } = preferredSolution(item);
   const grip = solutionGrip(item);
-  return `<p class="phase-copy">Select a solution to save it as preferred and watch it on the cube.</p>
-    ${gripMarkup(grip)}
-    <div class="solutions" role="group" aria-label="Suggested solutions">${item.solutions.map((moves, index) => {
+  return `<div class="solutions" role="group" aria-label="Suggested solutions">${item.solutions.map((moves, index) => {
       const credit = item.cubeSkills.has(moves.join(' ')) ? ' · CubeSkills' : '';
-      return `<button class="solution" data-solution="${index}" id="practice-solution-${index}" aria-pressed="${(preview?.choice ?? preferred) === index}">${icon(index === preferred ? 'Star' : 'Play')}<code>${gripNotation(moves, grip)}</code><small>${algorithmMoveCount(moves)} turns${credit}${index === preferred ? ' · Preferred' : ''}</small></button>`;
+      return `<button class="solution" data-solution="${index}" id="practice-solution-${index}" aria-pressed="${(preview?.choice ?? preferred) === index}">${icon(index === preferred ? 'Star' : 'Play')}${solutionNotation(moves, grip)}<small>${algorithmMoveCount(moves)} turns${credit}${index === preferred ? ' · Preferred' : ''}</small></button>`;
     }).join('')}</div>
+    ${gripMarkup(grip)}
     ${item.cubeSkills.size ? cubeSkillsCredit() : ''}
     ${preview?.scope === 'practice' ? walkthroughMarkup() : ''}`;
 }
@@ -578,8 +595,9 @@ function cubeSkillsCredit() {
   return `<p class="algorithm-credit"><a href="${cubeSkillsGuide}" target="_blank" rel="noopener">CubeSkills F2L guide</a> · Opening U turns are aligned to the case.</p>`;
 }
 
-function gripNotation(moves, grip) {
-  return notation(moves.map(move => gripMove(move, grip)));
+function solutionNotation(moves, grip) {
+  const tokens = moves.map(move => `<span>${showMove(gripMove(move, grip))}</span>`);
+  return `<code data-face-turns="${solutionFaceTurns(moves).join(',')}">${tokens.join(' ')}</code>`;
 }
 
 function holdLabel(grip) {
@@ -593,21 +611,18 @@ function preferredGripMarkup(context) {
 }
 
 function gripMarkup(grip) {
-  return `<div class="grip-picker">
-    <p class="grip-hold">Hold your cube <strong>${holdLabel(grip)}</strong></p>
+  return `<details class="grip-picker grip-more"><summary>Grip · ${holdLabel(grip)}</summary>
     <div class="grip-front" role="group" aria-label="Front color">
       <span>Front color</span>
       ${frontColors(grip.top).map(face => `<button id="grip-front-${face}" class="filter grip-color" data-grip="${grip.top}${face}" aria-pressed="${face === grip.front}">
         <span class="pair-colors" aria-hidden="true"><i data-color="${stickerNames[face]}"></i></span>${colorLabel(face)}</button>`).join('')}
     </div>
-    <details class="grip-more"><summary>More orientations</summary>
       <div class="grip-top"><label for="grip-top">Top color</label>
         <div class="select-wrap"><select id="grip-top">
           ${[...faces].map(face => `<option value="${face}" ${face === grip.top ? 'selected' : ''}>${colorLabel(face)}</option>`).join('')}
         </select>${icon('ChevronDown')}</div>
       </div>
-    </details>
-  </div>`;
+  </details>`;
 }
 
 function walkthroughMarkup() {
@@ -647,11 +662,11 @@ function fullContentMarkup() {
     const { think, execution, total } = log.timing();
     return `<div class="phase-card"><h3>${step.slots.length === 1 ? 'Pair solved' : 'Pairs solved'}</h3><p class="phase-copy">${step.slots.map(slot => slots[slot]).join(' · ')}</p>
       <p class="your-turns">Your turns <code>${notation(log.moves)}</code> · ${log.moves.length} moves</p>
+      <div class="actions"><button class="button" data-action="full-drill">Try again</button><button class="button secondary" data-action="full-back">Back to breakdown</button></div>
       ${replayMarkup('full')}
       <div class="split-metrics">${metric('Thinking', time(think), 's')}${metric('Execution', time(execution), 's')}${metric('Total', time(total), 's')}</div>
       ${fullSolutionsMarkup(step)}
-      ${usingVirtualCube() && bluetooth.status === 'connected' ? '<p class="phase-copy">Turn the top layer to retry this pair. Left and right turns stay on this result.</p>' : ''}
-      <div class="actions"><button class="button" data-action="full-drill">Try again</button><button class="button secondary" data-action="full-back">Back to breakdown</button></div></div>`;
+      ${usingVirtualCube() && bluetooth.status === 'connected' ? '<p class="phase-copy">Turn the top layer to retry this pair. Left and right turns stay on this result.</p>' : ''}</div>`;
   }
   if (drillIsSolving()) return timedPairMarkup() + pairMetricsMarkup(log.moves.length);
   if (fullIsSolving()) {
@@ -767,14 +782,13 @@ function fullSolutions(step) {
 function fullSolutionsMarkup(step) {
   const options = fullSolutions(step);
   const grip = solutionGrip(step);
-  const notice = options.length ? 'Select a solution to save it as preferred and watch it on the cube.'
-    : step.analysis === null ? 'Finding solutions that restore the cross and earlier pairs.' : 'Solution comparison is unavailable for this split.';
-  return `<p class="phase-copy">${notice}</p>
-    ${options.length ? `${gripMarkup(grip)}<div class="solutions" role="group" aria-label="Suggested solutions">${options.map(({ moves, label, preferred, cubeSkills }, index) => {
+  const notice = step.analysis === null ? 'Finding solutions that restore the cross and earlier pairs.' : 'Solution comparison is unavailable for this split.';
+  return `${options.length ? '' : `<p class="phase-copy">${notice}</p>`}
+    ${options.length ? `<div class="solutions" role="group" aria-label="Suggested solutions">${options.map(({ moves, label, preferred, cubeSkills }, index) => {
       const details = [`${algorithmMoveCount(moves)} moves`, label, cubeSkills && 'CubeSkills', preferred && 'Preferred'].filter(Boolean);
-      return `<button class="solution" data-full-solution="${index}" id="full-solution-${index}" aria-pressed="${preview?.context === step && preview.choice === moves.join(' ')}">${icon(preferred ? 'Star' : 'Play')}<code>${gripNotation(moves, grip)}</code><small>${details.join(' · ')}</small></button>`;
+      return `<button class="solution" data-full-solution="${index}" id="full-solution-${index}" aria-pressed="${preview?.context === step && preview.choice === moves.join(' ')}">${icon(preferred ? 'Star' : 'Play')}${solutionNotation(moves, grip)}<small>${details.join(' · ')}</small></button>`;
     }
-    ).join('')}</div>` : ''}
+    ).join('')}</div>${gripMarkup(grip)}` : ''}
     ${options.some(option => option.cubeSkills) ? cubeSkillsCredit() : ''}
     ${preview?.scope === 'full' ? walkthroughMarkup() : ''}`;
 }
@@ -1003,7 +1017,6 @@ function clearPreview() {
 }
 
 function clearFullHint() {
-  if (revealedAttempt === fullHint) revealedAttempt = undefined;
   fullHint = undefined;
   if (preview?.hint) clearPreview();
 }
@@ -1013,9 +1026,8 @@ async function showFullHint() {
   const slot = full.targetSlot;
   const start = trainer.cube.clone();
   const preserve = slots.map((_, index) => index).filter(index => index !== slot && slotSolved(start, index));
-  const hint = { log: full.log, start, end: solved, slots: [slot], targetSlots: [slot, ...preserve], analysis: null };
+  const hint = { log: full.log, turnOffset: full.log.turns.length, start, end: solved, slots: [slot], targetSlots: [slot, ...preserve], analysis: null };
   fullHint = hint;
-  revealedAttempt = hint;
   renderWork();
   hint.analysis = await planPair(hint.start, hint.end, hint.targetSlots).catch(() => undefined) ?? { solutions: [], optimal: false };
   if (fullHint === hint && page === 'full' && fullIsSolving()) renderWork();
@@ -1244,14 +1256,8 @@ const action = {
       renderWork();
       return;
     }
-    if (solutionsAreOpen()) {
-      revealedAttempt = undefined;
-      clearPreview();
-    } else {
-      revealedAttempt = solutionAttempt();
-      const log = page === 'practice' ? trainer.solveLog : full.log;
-      if (log) log.assisted = true;
-    }
+    showPairSolutions = !showPairSolutions;
+    if (!showPairSolutions) clearPreview();
     renderWork();
   },
   apply: () => {
@@ -1354,7 +1360,8 @@ document.addEventListener('change', event => {
   if (event.target.id === 'full-target') {
     clearFullHint();
     full.targetSlot = event.target.value === '' ? null : Number(event.target.value);
-    renderWork();
+    if (full.targetSlot !== null && showPairSolutions) showFullHint();
+    else renderWork();
     return;
   }
   if (event.target.id !== 'practice-order' || event.target.value === 'review') return;
