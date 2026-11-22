@@ -185,7 +185,7 @@ function update(transition) {
     if (page === 'full' && previousPhase === 'review') handleReviewTurn(transition.move);
     else full.record(transition);
   }
-  live.show(trainer.cube, trainer.expected, transition, mode === 'practice' && trainer.item.varied);
+  live.show(trainer.cube, trainer.expected, transition);
   if (page === 'practice') updatePractice();
   if (page === 'full') updateFull(previousPhase);
   renderTargetGuide();
@@ -214,24 +214,26 @@ function solutionsAreOpen() {
   return Boolean(attempt && attempt === revealedAttempt);
 }
 
-function updateTimedPair(panel, phase, status, turns) {
+function updateTimedPair(panel, attempt) {
+  const phase = attempt.first ? 'solving' : 'ready';
   if (panel.dataset.timedPair !== phase) {
+    const status = pairSolveStatus(attempt);
     panel.querySelector('h3').textContent = status.title;
     panel.querySelector('.phase-copy').textContent = status.description;
     panel.querySelector('.ready-block small').textContent = status.timerLabel;
     panel.dataset.timedPair = phase;
   }
+  const turns = attempt.moves;
   const log = panel.querySelector('[data-practice-turns]');
   log.hidden = turns.length === 0;
   log.querySelector('code').textContent = notation(turns);
+  $('[data-metric="moves"]').textContent = turns.length || '—';
 }
 
 function updatePractice() {
   const solve = $('[data-timed-pair]');
   if (renderedPracticeStart === trainer.caseStart && practiceIsSolving() && solve) {
-    const turns = trainer.turns;
-    updateTimedPair(solve, trainer.phase, practiceSolveStatus(), turns);
-    $('[data-metric="moves"]').textContent = turns.length || '—';
+    updateTimedPair(solve, trainer.solveLog);
   } else if (trainer.phase !== 'results' || renderedPracticeStart !== trainer.caseStart || !$('[data-practice-result]')) {
     renderWork();
   }
@@ -246,7 +248,7 @@ function updateFull(previousPhase) {
   const drill = $('[data-timed-pair]');
   const solve = $('[data-full-solve]');
   if (renderedFullLog === full.log && drillIsSolving() && drill) {
-    updateTimedPair(drill, full.phase, drillSolveStatus(), full.log.moves);
+    updateTimedPair(drill, full.log);
   } else if (renderedFullLog === full.log && fullIsSolving() && solve) {
     solve.querySelector('h3').textContent = full.phase === 'ready' ? 'Ready to solve' : 'Solve the cross and F2L';
     solve.querySelector('[data-cross-status]').textContent = crossSolved(trainer.cube) ? 'Solved' : 'Open';
@@ -370,8 +372,7 @@ function renderConnection() {
 }
 
 function updateCubeOrientation() {
-  const fixedPracticeView = mode === 'practice' && trainer.item.varied;
-  const orientation = !fixedPracticeView && usingVirtualCube() && bluetooth.status === 'connected' ? bluetooth.orientation : undefined;
+  const orientation = usingVirtualCube() && bluetooth.status === 'connected' ? bluetooth.orientation : undefined;
   const available = Boolean(orientation);
   const tracking = available && rotationTracking;
   if (rotationControls.hidden !== !available || tracking !== Boolean(live.orientation)) {
@@ -451,8 +452,12 @@ function practiceMarkup() {
     <h2>${item.title}</h2>${item.varied ? '' : `<p>${item.detail}</p>`}
   </div>
   <div class="stepper" aria-label="Practice progress">${stages.map((name, index) => `<div class="step ${index === stage ? 'active' : index < stage ? 'done' : ''}" ${index === stage ? 'aria-current="step"' : ''}><i>${index < stage ? icon('Check') : index + 1}</i>${name}</div>`).join('')}</div>
-  ${phase === 'results' ? reviewMarkup() : solving ? solveMarkup() : virtualPractice ? interruptedPracticeMarkup() : setupMarkup()}
-  <div class="metrics" aria-label="Current attempt statistics">${metric('Thinking', result ? time(result.think) : '—', result ? 's' : '', 'Clock', 'thinking')}${metric('Execution', result ? time(result.execution) : '—', result ? 's' : '', 'Zap', 'execution')}${metric('Moves', result?.moves ?? (phase === 'solving' ? trainer.turns.length : '—'), '', 'Move', 'moves')}</div>`;
+  ${phase === 'results' ? reviewMarkup() : solving ? timedPairMarkup() : virtualPractice ? interruptedPracticeMarkup() : setupMarkup()}
+  ${pairMetricsMarkup(trainer.turns.length, result)}`;
+}
+
+function pairMetricsMarkup(moves, result) {
+  return `<div class="metrics" aria-label="Current attempt statistics">${metric('Thinking', result ? time(result.think) : '—', result ? 's' : '', 'Clock', 'thinking')}${metric('Execution', result ? time(result.execution) : '—', result ? 's' : '', 'Zap', 'execution')}${metric('Moves', moves || '—', '', 'Move', 'moves')}</div>`;
 }
 
 function categoryBadge(category) {
@@ -494,13 +499,13 @@ function setupMarkup(kind = 'case') {
   </div>`;
 }
 
-function practiceSolveStatus() {
-  const description = trainer !== virtualTrainer ? 'Your first turn ends thinking time and starts execution.' : bluetooth.status === 'connected'
+function pairSolveStatus(log) {
+  const description = !usingVirtualCube() ? 'Your first turn ends thinking time and starts execution.' : bluetooth.status === 'connected'
     ? 'Watch the virtual cube and turn your Bluetooth cube. Your first turn starts execution.'
     : 'Use the face buttons or keyboard. Your first turn starts execution.';
-  return trainer.phase === 'ready'
+  return !log.first
     ? { title: 'Ready to solve', description, timerLabel: 'Thinking time' }
-    : { title: 'Solving the pair', description: 'Insert the target pair and restore the white cross and any previously solved slots.', timerLabel: 'Execution time' };
+    : { title: 'Solving the pair', description: 'Solve the target and restore the white cross and any previously solved slots.', timerLabel: 'Execution time' };
 }
 
 function interruptedPracticeMarkup() {
@@ -510,20 +515,22 @@ function interruptedPracticeMarkup() {
     <div class="actions">${awaitingState ? `<button class="button" data-action="resync">${icon('RefreshCw')} Sync state</button>` : `<button class="button" data-action="retry">${icon('RotateCcw')} Restart case</button>`}</div></div>`;
 }
 
-function solveMarkup() {
-  const { title, description, timerLabel } = practiceSolveStatus();
-  const turns = trainer.turns;
-  return `<div class="phase-card" data-timed-pair="${trainer.phase}">
-    <div class="section-line">
-      <h3>${title}</h3>
-      ${solutionToggleMarkup()}
-    </div>
+function timedPairMarkup() {
+  const drill = page === 'full';
+  const log = drill ? full.log : trainer.solveLog;
+  const context = drill ? full.step : trainer.item;
+  const { title, description, timerLabel } = pairSolveStatus(log);
+  const restart = drill ? 'full-drill' : 'retry';
+  const navigation = drill ? '<button class="button ghost" data-action="full-back">Back to breakdown</button>'
+    : `<button class="button ghost" data-action="next">Next case ${icon('ChevronRight')}</button>`;
+  return `<div class="phase-card" data-timed-pair="${log.first ? 'solving' : 'ready'}">
+    <div class="section-line"><h3>${title}</h3>${solutionToggleMarkup()}</div>
     <p class="phase-copy">${description}</p>
-    ${solutionsAreOpen() ? '' : preferredGripMarkup(trainer.item)}
-    <div class="ready-block"><strong data-timer>${time(0)} s</strong><small>${timerLabel}</small></div>
-    <p class="your-turns" data-practice-turns ${turns.length ? '' : 'hidden'}>Your turns <code>${notation(turns)}</code></p>
-    ${duringSolveSolutions(practiceSolutionsMarkup)}
-    <div class="actions"><button class="button secondary" data-action="retry">${icon('RotateCcw')} Restart case</button><button class="button ghost" data-action="next">Next case ${icon('ChevronRight')}</button></div>
+    ${solutionsAreOpen() ? '' : preferredGripMarkup(context)}
+    <div class="ready-block"><strong data-timer>0.00 s</strong><small>${timerLabel}</small></div>
+    ${turnLogMarkup(log)}
+    ${duringSolveSolutions(drill ? () => fullSolutionsMarkup(context) : practiceSolutionsMarkup)}
+    <div class="actions"><button class="button secondary" data-action="${restart}">${icon('RotateCcw')} Restart ${drill ? 'pair' : 'case'}</button>${navigation}</div>
   </div>`;
 }
 
@@ -646,17 +653,7 @@ function fullContentMarkup() {
       ${usingVirtualCube() && bluetooth.status === 'connected' ? '<p class="phase-copy">Turn the top layer to retry this pair. Left and right turns stay on this result.</p>' : ''}
       <div class="actions"><button class="button" data-action="full-drill">Try again</button><button class="button secondary" data-action="full-back">Back to breakdown</button></div></div>`;
   }
-  if (drillIsSolving()) {
-    const { title, description, timerLabel } = drillSolveStatus();
-    return `<div class="phase-card" data-timed-pair="${phase}">
-      <div class="section-line"><h3>${title}</h3>${solutionToggleMarkup()}</div>
-      <p class="phase-copy">${description}</p>
-      ${solutionsAreOpen() ? '' : preferredGripMarkup(step)}
-      <div class="ready-block"><strong data-full-timer>0.00 s</strong><small>${timerLabel}</small></div>
-      ${fullTurnLog(log)}
-      ${duringSolveSolutions(() => fullSolutionsMarkup(step))}
-      <div class="actions"><button class="button secondary" data-action="full-drill">${icon('RotateCcw')} Restart pair</button><button class="button ghost" data-action="full-back">Back to breakdown</button></div></div>`;
-  }
+  if (drillIsSolving()) return timedPairMarkup() + pairMetricsMarkup(log.moves.length);
   if (fullIsSolving()) {
     return `<div class="phase-card" data-full-solve>
       <h3>${phase === 'ready' ? 'Ready to solve' : 'Solve the cross and F2L'}</h3>
@@ -667,7 +664,7 @@ function fullContentMarkup() {
       ${fullTargetMarkup()}
       ${full.targetSlot !== null ? `<div class="target-solutions">${solutionToggleMarkup()}</div>
         ${duringSolveSolutions(() => `<p class="phase-copy">These solutions start from the position where you opened the panel.</p>${fullSolutionsMarkup(fullHint)}`)}` : ''}
-      ${fullTurnLog(log)}
+      ${turnLogMarkup(log)}
       <div class="actions"><button class="button ghost" data-action="full-cancel">Cancel attempt</button></div></div>`;
   }
   return `<div class="view-head"><h2>Start a timed solve</h2><p>Use a guided scramble or start from your cube’s current state. Hold white down with green facing you.</p></div>
@@ -677,19 +674,7 @@ function fullContentMarkup() {
     </div>`;
 }
 
-function drillSolveStatus() {
-  let description = 'Thinking time is running. Your first turn starts execution.';
-  if (usingVirtualCube()) {
-    description = bluetooth.status === 'connected'
-      ? 'The recorded position is ready. Turn your Bluetooth cube to practice.'
-      : 'The recorded position is ready. Use the face buttons or keyboard to practice.';
-  }
-  return full.phase === 'drill-ready'
-    ? { title: 'Ready to practice the pair', description, timerLabel: 'Thinking time' }
-    : { title: 'Solving the pair', description: 'Insert the pair and restore the cross and earlier pairs.', timerLabel: 'Execution time' };
-}
-
-function fullTurnLog(log) {
+function turnLogMarkup(log) {
   return `<p class="your-turns full-turns" data-practice-turns ${log.first ? '' : 'hidden'}>Your turns <code>${notation(log.moves)}</code></p>`;
 }
 
@@ -1002,7 +987,7 @@ function showHelp() {
     <li>In the Cross + F2L breakdown, select a pair and choose <strong>Practice this pair</strong>. Virtual cube loads its original position immediately. After solving it, turn the top layer to retry; left and right turns keep you on the same pair. Turn off Virtual cube for guided setup on your physical cube.</li>
     <li>Use <strong>Rotation tracking</strong> to turn gyroscope tracking on or off. To level the view, hold the cube flat with white down and green facing you, then choose <strong>Align view</strong>.</li>
     <li>With the GAN disconnected, press U, R, F, D, L, or B to turn a face. Hold Shift for a counterclockwise turn or Alt for a half turn. Use Enter to apply the next guided turn.</li>
-    <li>Drag either cube to see its other faces.</li>
+    <li>Drag the practice cube to see its other faces during a solve or review.</li>
     <li>In Cross + F2L, the solve starts on the first turn. For each pair, thinking runs from the previous split to your next turn. Two consecutive quarter turns in the same direction count as one half turn.</li>
     </ul><div class="actions"><button class="button secondary" data-action="close">Done</button></div>`);
 }
@@ -1421,13 +1406,14 @@ function tick() {
     fullTimer.textContent = `${time(start ? Math.max(0, performance.now() - start.local) : 0)} s`;
   }
   const timer = $('[data-timer]');
-  if (!timer || !['ready', 'solving'].includes(trainer.phase)) return;
-  const thinking = trainer.phase === 'ready';
-  const delta = Math.max(0, performance.now() - (thinking ? trainer.readyAt : trainer.first.local));
-  timer.textContent = `${time(delta)} s`;
-  const thinkingValue = thinking ? time(delta) : time(Math.max(0, trainer.first.local - trainer.readyAt));
-  $('[data-metric="thinking"]').innerHTML = `${thinkingValue}<span>s</span>`;
-  if (!thinking) $('[data-metric="execution"]').innerHTML = `${time(delta)}<span>s</span>`;
+  if (!timer) return;
+  const log = page === 'full' ? full.log : trainer.solveLog;
+  const now = performance.now();
+  const thinking = time(Math.max(0, (log.first?.local ?? now) - log.readyAt.local));
+  const execution = log.first && time(Math.max(0, now - log.first.local));
+  timer.textContent = `${execution ?? thinking} s`;
+  $('[data-metric="thinking"]').innerHTML = `${thinking}<span>s</span>`;
+  if (execution) $('[data-metric="execution"]').innerHTML = `${execution}<span>s</span>`;
 }
 
 setInterval(tick, 33);

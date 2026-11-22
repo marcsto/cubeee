@@ -10,7 +10,7 @@ Random practice varies the target slot across all four sides and varies the top-
 
 In a **Cross + F2L** solve breakdown, select a pair and choose **Practice this pair**. Virtual cube is on by default and loads the exact position from that split, including the earlier pairs. Solve it using your connected GAN or the on-screen controls. On the result screen, turn the top layer to retry the same pair; left and right turns are ignored. **Restart pair** resets an unfinished attempt, and **Back to breakdown** lets you pick another pair. Turn off **Virtual cube** for guided setup on your physical cube.
 
-With the GAN i4 gyroscope on, use **Rotation tracking** to switch whole-cube tracking on or off. To set the level view, hold the cube flat with white down and green facing you, then choose **Align view**. The left, right, and top shortcuts use the faces from that grip. GAN i4's Burst mode keeps the gyroscope on.
+In both F2L Practice and Cross + F2L pair practice, drag the virtual cube with a finger or mouse to inspect another angle. When your GAN i4 sends gyroscope readings, **Rotation tracking** lets the view follow the physical cube. To set the level view, hold the cube flat with white down and green facing you, then choose **Align view**. The left, right, and top shortcuts use the faces from that grip. GAN i4's Burst mode keeps the gyroscope on.
 
 With the GAN disconnected, use the face buttons or the U, R, F, D, L, and B keys. Hold Shift for a counterclockwise turn or Alt for a half turn. The first detected turn stops the thinking timer and starts the execution timer. Quick consecutive quarter turns in the same direction count as a half turn.
 
