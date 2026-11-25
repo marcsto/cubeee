@@ -2,6 +2,7 @@ import '@fontsource-variable/manrope/wght.css';
 import '@fontsource/space-mono/latin-400.css';
 import '@fontsource/space-mono/latin-700.css';
 import './style.css';
+import { connectGanCube } from 'gan-web-bluetooth';
 import { Activity, ArrowRight, Bluetooth, Box, Check, ChevronDown, ChevronLeft, ChevronRight, CircleAlert, CircleHelp, Clock, History, Keyboard, LayoutGrid, Move, Pause, Play, RefreshCw, RotateCcw, Scan, Star, Target, UserRound, Zap, X, createElement } from 'lucide';
 import { ActivityHistory, recentLimit, restoreReport, savedAttempt, savedReport } from './activity.js';
 import { algorithmMoveCount, crossSolved, faces, invert, isCubeRotation, played, slotFaces, slotSolved, slots, solved, turnFace } from './cube.js';
@@ -113,7 +114,7 @@ const full = new FullSolve(physicalTrainer, () => {
   activity.record(savedAttempt(kind, log.timing(), log.moves, { ...details, slots: result.slots }));
 });
 
-const bluetooth = new BluetoothCube({
+const bluetooth = new BluetoothCube(connectGanCube, {
   change() {
     if (renderConnection() && (page === 'practice' || page === 'full')) renderWork();
   },
@@ -155,7 +156,7 @@ const bluetooth = new BluetoothCube({
 });
 
 function resetAfterDisconnect() {
-  if (dialog.open && $('#device-name')) dialog.close();
+  if (dialog.open && ($('#device-name') || $('[data-action="confirm-calibration"]'))) dialog.close();
   practiceGestures.reset();
   if (mode === 'full') {
     full.interrupt('The cube disconnected. Reconnect or start a new attempt in virtual mode.');
@@ -1292,7 +1293,7 @@ const action = {
   },
   connect: () => {
     if (bluetooth.status === 'connected') {
-      openDialog('GAN i4 connected', `<p id="device-name"></p><div class="actions"><button class="button secondary" data-action="resync">${icon('RefreshCw')} Sync state</button><button class="button ghost" data-action="disconnect">Disconnect</button></div>`);
+      openDialog('GAN i4 connected', `<p id="device-name"></p><div class="actions"><button class="button secondary" data-action="resync">${icon('RefreshCw')} Sync state</button><button class="button secondary" data-action="calibrate">Calibrate solved cube…</button><button class="button ghost" data-action="disconnect">Disconnect</button></div>`);
       $('#device-name').textContent = bluetooth.name;
     } else {
       bluetooth.connect();
@@ -1303,9 +1304,24 @@ const action = {
     dialog.close();
     resetAfterDisconnect();
   },
-  resync: () => {
+  resync: async () => {
     if (dialog.open) dialog.close();
-    bluetooth.resync().then(() => showNotice('Cube state synced.')).catch(error => showNotice(error.message));
+    try {
+      const cube = await bluetooth.resync();
+      if (!usingVirtualCube()) live.show(trainer.cube, trainer.expected);
+      showNotice(cube.isSolved() || usingVirtualCube() ? 'Cube state synced.'
+        : 'The GAN reports an unsolved cube. If all six faces are solved, open GAN i4 connected and choose Calibrate solved cube.');
+    } catch (error) { showNotice(error.message); }
+  },
+  calibrate: () => {
+    openDialog('Calibrate solved cube?', `<p>Check that each face of your physical cube is one solid color. This tells the GAN to remember its current position as solved. Keep the cube still until it confirms.</p><div class="actions"><button class="button secondary" data-action="close" autofocus>Cancel</button><button class="button" data-action="confirm-calibration">My cube is solved</button></div>`);
+  },
+  'confirm-calibration': async () => {
+    dialog.close();
+    try {
+      await bluetooth.resync({ resetToSolved: true });
+      showNotice('Calibration complete. The GAN reports a solved cube.');
+    } catch (error) { showNotice(error.message); }
   },
   'demo-play': playPreview,
   'demo-reset': () => { stopPreview(); preview.index = 0; updatePreview(); },

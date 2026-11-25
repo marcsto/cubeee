@@ -1,8 +1,7 @@
-import { connectGanCube } from 'gan-web-bluetooth';
 import { ganMove, ganOrientation, ganState, validFacelets } from './cube.js';
 
 const batteryKey = 'cubeee:lastBattery';
-const idleTimeout = 10 * 60_000;
+const idleTimeout = 60 * 60_000;
 const batteryRefresh = 60_000;
 const batteryRetry = 5000;
 const validLevel = level => Number.isInteger(level) && level >= 0 && level <= 100;
@@ -33,7 +32,8 @@ export class BluetoothCube {
   status = 'disconnected';
   retryAddressFor = new Set();
 
-  constructor(callbacks) {
+  constructor(connectGanCube, callbacks) {
+    this.connectGanCube = connectGanCube;
     this.callbacks = callbacks;
     try {
       const saved = JSON.parse(localStorage.getItem(batteryKey));
@@ -59,7 +59,7 @@ export class BluetoothCube {
     this.callbacks.change();
     let deviceId, account, accountAddress, usedSavedAddress;
     try {
-      this.conn = await connectGanCube(async (device, fallback) => {
+      this.conn = await this.connectGanCube(async (device, fallback) => {
         if (fallback) return this.callbacks.address(device.name ?? 'GAN i4');
         deviceId = device.id;
         if (device.name) account = this.callbacks.addressStore(device.name).catch(() => undefined);
@@ -108,12 +108,13 @@ export class BluetoothCube {
     }
   }
 
-  async resync() {
-    if (!this.conn) return;
+  async resync({ resetToSolved = false } = {}) {
+    if (!this.conn) throw new Error('Connect the cube before syncing its state.');
+    if (resetToSolved && this.syncing) throw new Error('A sync is in progress. Try calibration again when it finishes.');
     if (this.syncing) return this.syncing;
-    this.syncing = this.requestState();
+    this.syncing = this.requestState(this.conn, resetToSolved);
     try {
-      await this.syncing;
+      return await this.syncing;
     } finally {
       this.syncing = null;
     }
@@ -134,21 +135,35 @@ export class BluetoothCube {
     this.idleTimer = setTimeout(() => {
       this.disconnect();
       this.callbacks.disconnect();
-      this.callbacks.error('Cube disconnected after 10 minutes without a turn. Reconnect when you’re ready.');
+      this.callbacks.error('Cube disconnected after 1 hour without a turn. Reconnect when you’re ready.');
     }, idleTimeout);
   }
 
-  async requestState() {
+  async requestState(connection, resetToSolved) {
+    if (this.batteryRequest) await this.batteryRequest.catch(() => {});
+    if (connection !== this.conn) throw new Error('Bluetooth connection closed.');
+    if (resetToSolved) {
+      await connection.sendCubeCommand({ type: 'REQUEST_RESET' });
+      if (connection !== this.conn) throw new Error('Bluetooth connection closed.');
+    }
+    let timer;
     const response = new Promise((resolve, reject) => {
-      const timer = setTimeout(() => this.waiting?.(new DOMException('No valid state received. Wake the cube and check its Bluetooth MAC address.', 'TimeoutError')), 6000);
+      const timeoutMessage = resetToSolved
+        ? 'The cube did not confirm a solved state. Keep it still and try calibration again.'
+        : 'No valid state received. Wake the cube and check its Bluetooth MAC address.';
+      timer = setTimeout(() => reject(new DOMException(timeoutMessage, 'TimeoutError')), 6000);
       this.waiting = (error, cube) => {
-        clearTimeout(timer);
-        this.waiting = null;
         if (error) reject(error);
-        else resolve(cube);
+        else if (!resetToSolved || cube.isSolved()) resolve(cube);
       };
     });
-    await Promise.all([response, this.conn.sendCubeCommand({ type: 'REQUEST_FACELETS' }).catch(error => this.waiting?.(error))]);
+    try {
+      const [cube] = await Promise.all([response, connection.sendCubeCommand({ type: 'REQUEST_FACELETS' })]);
+      return cube;
+    } finally {
+      clearTimeout(timer);
+      this.waiting = null;
+    }
   }
 
   handle(event) {
