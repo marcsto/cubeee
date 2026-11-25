@@ -129,3 +129,50 @@ test('a denied advertisement watch leaves manual reconnect available, and revoke
   await cube.disconnect();
   assert.equal(cube.cachedDevice, undefined);
 });
+
+test('a freshly loaded tab resumes its permitted cube by ID before it advertises', async t => {
+  const values = new Map();
+  Object.defineProperty(globalThis, 'sessionStorage', { configurable: true, value: {
+    getItem: key => values.get(key),
+    setItem: (key, value) => values.set(key, value),
+    removeItem: key => values.delete(key),
+  } });
+  t.after(() => { delete globalThis.sessionStorage; });
+  const adapter = {};
+  const { cube, device, selections } = await connectCube(t, adapter);
+  cube.suspend();
+  const restored = new BluetoothCube(cube.connectGanCube, cube.callbacks);
+  t.after(() => restored.disconnect());
+  const permitted = { id: device.id };
+  adapter.getDevices = async () => [{ id: 'other', name: 'GAN i4' }, permitted];
+  await restored.prepareReconnect();
+  assert.equal(restored.status, 'connected');
+  assert.deepEqual(selections, [undefined, permitted]);
+  await restored.disconnect();
+  restored.suspend();
+  assert.equal(values.size, 0);
+});
+
+test('a failed reload attempt can retry on wake and never opens the picker', async t => {
+  const adapter = {};
+  const { cube, device } = await connectCube(t, adapter);
+  await cube.disconnect();
+  adapter.getDevices = async () => [device];
+  let watchCount = 0;
+  device.watchAdvertisements = async () => { watchCount++; };
+  const attempts = [];
+  const restored = new BluetoothCube(async (address, permitted) => {
+    attempts.push(permitted);
+    if (attempts.length === 1) throw new Error('Cube is asleep');
+    return cube.connectGanCube(address, permitted);
+  }, cube.callbacks);
+  t.after(() => restored.disconnect());
+  restored.resumeId = device.id;
+  await restored.prepareReconnect();
+  assert.equal(restored.status, 'disconnected');
+  assert.equal(watchCount, 1);
+  device.dispatchEvent(new Event('advertisementreceived'));
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(restored.status, 'connected');
+  assert.deepEqual(attempts, [device, device]);
+});

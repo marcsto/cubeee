@@ -2,6 +2,7 @@ import { ganMove, ganOrientation, ganState, validFacelets } from './cube.js';
 
 const batteryKey = 'cubeee:lastBattery';
 const deviceKey = 'cubeee:lastCubeId';
+const resumeKey = 'cubeee:resumeCubeId';
 const idleMinutes = 15;
 const batteryRefresh = 60_000;
 const batteryRetry = 5000;
@@ -38,6 +39,10 @@ export class BluetoothCube {
     this.connectGanCube = connectGanCube;
     this.callbacks = callbacks;
     try {
+      this.resumeId = sessionStorage.getItem(resumeKey);
+      sessionStorage.removeItem(resumeKey);
+    } catch { /* Storage can be disabled. */ }
+    try {
       const saved = JSON.parse(localStorage.getItem(batteryKey));
       if (saved?.deviceId && validLevel(saved.level)) this.lastBattery = saved;
       this.preferredId = localStorage.getItem(deviceKey) || this.lastBattery?.deviceId;
@@ -57,6 +62,17 @@ export class BluetoothCube {
     this.discovery = null;
   }
 
+  suspend() {
+    this.suspended = true;
+    this.stopWatching();
+    this.resumeId = this.status === 'connected' ? this.deviceId : undefined;
+    try {
+      if (this.resumeId) sessionStorage.setItem(resumeKey, this.resumeId);
+      else sessionStorage.removeItem(resumeKey);
+    } catch { /* Storage can be disabled. */ }
+    if (this.status !== 'disconnected') this.disconnect(true, true);
+  }
+
   async prepareReconnect() {
     this.stopWatching();
     if (this.status !== 'disconnected' || this.suspended) return;
@@ -65,15 +81,22 @@ export class BluetoothCube {
     this.discovery = discovery;
     if (typeof navigator.bluetooth?.getDevices === 'function') {
       try {
-        const devices = (await navigator.bluetooth.getDevices()).filter(device => /^(GAN|MG|AiCube)/.test(device.name ?? ''));
+        const devices = await navigator.bluetooth.getDevices();
         if (signal.aborted) return;
-        const id = this.cachedDevice?.id ?? this.preferredId;
-        this.cachedDevice = id ? devices.find(device => device.id === id) : devices.length === 1 ? devices[0] : undefined;
+        const id = this.resumeId ?? this.cachedDevice?.id ?? this.preferredId;
+        if (id) {
+          this.cachedDevice = devices.find(device => device.id === id);
+        } else {
+          const cubes = devices.filter(device => /^(GAN|MG|AiCube)/.test(device.name ?? ''));
+          this.cachedDevice = cubes.length === 1 ? cubes[0] : undefined;
+        }
         this.callbacks.change();
       } catch { /* The device selected in this tab can still be reused. */ }
     }
     const device = this.cachedDevice;
-    if (signal.aborted || !this.wakeAllowed || globalThis.document?.hidden || !device?.watchAdvertisements) return;
+    if (signal.aborted || !this.wakeAllowed || globalThis.document?.hidden || !device) return;
+    if (device.id === this.resumeId) return this.connect({ automatic: true, resume: true });
+    if (!device.watchAdvertisements) return;
     try {
       device.addEventListener('advertisementreceived', () => {
         if (!signal.aborted && !globalThis.document?.hidden) this.connect({ automatic: true });
@@ -84,7 +107,7 @@ export class BluetoothCube {
     }
   }
 
-  async connect({ pick = false, automatic = false } = {}) {
+  async connect({ pick = false, automatic = false, resume = false } = {}) {
     if (this.status !== 'disconnected') return;
     if (!navigator.bluetooth) {
       this.callbacks.error('Web Bluetooth is unavailable here. Open cubeee in Chrome or Edge with Bluetooth enabled.');
@@ -93,6 +116,7 @@ export class BluetoothCube {
     this.stopWatching();
     const permitted = pick ? undefined : this.cachedDevice;
     if (automatic && !permitted) return;
+    this.resumeId = undefined;
     const attempt = this.attempt = Symbol();
     this.status = 'connecting';
     this.callbacks.change();
@@ -161,7 +185,7 @@ export class BluetoothCube {
       }
       // Setup can fail after GATT connects but before the library returns a connection.
       if (!this.conn && selectedDevice?.gatt?.connected) selectedDevice.gatt.disconnect();
-      await this.disconnect();
+      await this.disconnect(true, resume && !retryAddress);
       if (retryAddress) this.callbacks.error('The cube did not respond with the saved address. Wake it and reconnect to try a fresh address.');
       else if (permitted) {
         this.callbacks.error('Wake the cube and try Reconnect Cube. Use “Choose cube…” to open the Bluetooth picker.');

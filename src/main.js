@@ -168,12 +168,9 @@ function resetAfterDisconnect() {
 }
 
 window.addEventListener('pagehide', () => {
-  bluetooth.suspended = true;
-  bluetooth.stopWatching();
-  if (bluetooth.status !== 'disconnected') {
-    bluetooth.disconnect(true, true);
-    resetAfterDisconnect();
-  }
+  const wasActive = bluetooth.status !== 'disconnected';
+  bluetooth.suspend();
+  if (wasActive) resetAfterDisconnect();
 });
 window.addEventListener('pageshow', event => {
   if (!event.persisted) return;
@@ -1031,8 +1028,9 @@ function showHelp() {
       <details><summary>Enable automatic reconnect in Chrome</summary>
         <ol>
           <li>In a new Chrome tab, paste <code>chrome://flags/#enable-experimental-web-platform-features</code> into the address bar and press Enter.</li>
-          <li>Set <strong>Experimental Web Platform features</strong> to <strong>Enabled</strong>, then select <strong>Relaunch</strong> to restart Chrome.</li>
-          <li>Return to cubeee and turn the white face to wake your paired cube. Keep the tab visible so it can reconnect.</li>
+          <li>Set <strong>Experimental Web Platform features</strong> to <strong>Enabled</strong>.</li>
+          <li>To remember your cube after a reload, open <code>chrome://flags/#enable-web-bluetooth-new-permissions-backend</code>. Set <strong>Use the new permissions backend for Web Bluetooth</strong> to <strong>Enabled</strong>, then tap <strong>Relaunch</strong>.</li>
+          <li>Return to cubeee, turn the white face, and select your cube once using <strong>Connect GAN i4</strong> or <strong>Choose cube…</strong> to save its permission. After a reload, keep cubeee visible and turn the white face if the cube is asleep.</li>
         </ol>
       </details></li>
     <li>Choose <strong>Virtual cube</strong> in F2L Practice to load each case on screen. Watch the screen and use your connected cube to turn.</li>
