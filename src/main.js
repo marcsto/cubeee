@@ -1022,7 +1022,14 @@ function askAddress(deviceName) {
 
 function showHelp() {
   openDialog('Cube controls', `<p>Hold the training cube with white down and green facing you. Keep this orientation as you follow the setup.</p><ul>
-    <li>Turn the white face to wake the GAN i4. Choose <strong>Connect GAN i4</strong> to pair. When <strong>Reconnect Cube</strong> appears, click it or press Space. Supported browsers also reconnect when the cube advertises.</li>
+    <li>Turn the white face to wake the GAN i4. Choose <strong>Connect GAN i4</strong> to pair. When <strong>Reconnect Cube</strong> appears, click it or press Space.
+      <details><summary>Enable automatic reconnect in Chrome</summary>
+        <ol>
+          <li>In a new Chrome tab, paste <code>chrome://flags/#enable-experimental-web-platform-features</code> into the address bar and press Enter.</li>
+          <li>Set <strong>Experimental Web Platform features</strong> to <strong>Enabled</strong>, then select <strong>Relaunch</strong> to restart Chrome.</li>
+          <li>Return to cubeee and turn the white face to wake your paired cube. Keep the tab visible so it can reconnect.</li>
+        </ol>
+      </details></li>
     <li>Choose <strong>Virtual cube</strong> in F2L Practice to load each case on screen. Watch the screen and use your connected cube to turn.</li>
     <li>In the Cross + F2L breakdown, select a pair and choose <strong>Practice this pair</strong>. Virtual cube loads its original position immediately. After solving it, turn the top layer to retry; left and right turns keep you on the same pair. Turn off Virtual cube for guided setup on your physical cube.</li>
     <li>Use <strong>Rotation tracking</strong> to turn gyroscope tracking on or off. To level the view, hold the cube flat with white down and green facing you, then choose <strong>Align view</strong>.</li>
