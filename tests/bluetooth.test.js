@@ -86,7 +86,7 @@ test('a tab can reconnect directly without getDevices, and can explicitly open t
   assert.equal(cube.status, 'connected');
 });
 
-test('restore the preferred cube, reconnect once on advertisement, and respect intentional disconnects', async t => {
+test('wake after an idle night reconnects once, while a manual disconnect stays disconnected', async t => {
   const adapter = {};
   const { cube, device, selections, drop } = await connectCube(t, adapter);
   const other = { name: 'GAN i4', id: 'other' };
@@ -105,11 +105,23 @@ test('restore the preferred cube, reconnect once on advertisement, and respect i
   assert.equal(cube.status, 'connected');
   t.mock.timers.tick(15 * 60_000);
   await new Promise(resolve => setImmediate(resolve));
+  // The cube can keep advertising for a while after its GATT connection closes.
   advertise();
+  for (let i = 0; i < 12; i++) {
+    t.mock.timers.tick(5000);
+    advertise();
+  }
   assert.equal(cube.status, 'disconnected');
   assert.equal(selections.length, 2);
-  await cube.connect();
+  t.mock.timers.tick(8 * 60 * 60_000);
+  assert.equal(selections.length, 2);
+  advertise();
+  advertise();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(cube.status, 'connected');
+  assert.deepEqual(selections, [undefined, device, device]);
   await cube.disconnect();
+  t.mock.timers.tick(8 * 60 * 60_000);
   advertise();
   assert.equal(selections.length, 3);
 });
@@ -128,6 +140,29 @@ test('a denied advertisement watch leaves manual reconnect available, and revoke
   adapter.getDevices = async () => [];
   await cube.disconnect();
   assert.equal(cube.cachedDevice, undefined);
+});
+
+test('a failed wake connection keeps listening for the next wake', async t => {
+  const { cube, device, drop } = await connectCube(t);
+  device.watchAdvertisements = async () => {};
+  const connect = cube.connectGanCube;
+  let attempts = 0;
+  cube.connectGanCube = (...args) => {
+    if (++attempts === 1) throw new DOMException('Connection failed', 'NetworkError');
+    return connect(...args);
+  };
+  const advertise = () => device.dispatchEvent(new Event('advertisementreceived'));
+  drop();
+  advertise();
+  await new Promise(resolve => setImmediate(resolve));
+  advertise();
+  assert.equal(cube.status, 'disconnected');
+  assert.equal(attempts, 1);
+  t.mock.timers.tick(60_000);
+  advertise();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(cube.status, 'connected');
+  assert.equal(attempts, 2);
 });
 
 test('a freshly loaded tab resumes its permitted cube by ID before it advertises', async t => {

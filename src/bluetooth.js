@@ -4,6 +4,7 @@ const batteryKey = 'cubeee:lastBattery';
 const deviceKey = 'cubeee:lastCubeId';
 const resumeKey = 'cubeee:resumeCubeId';
 const idleMinutes = 15;
+const wakeQuietMs = 10_000;
 const batteryRefresh = 60_000;
 const batteryRetry = 5000;
 const validLevel = level => Number.isInteger(level) && level >= 0 && level <= 100;
@@ -99,7 +100,15 @@ export class BluetoothCube {
     if (!device.watchAdvertisements) return;
     try {
       device.addEventListener('advertisementreceived', () => {
-        if (!signal.aborted && !globalThis.document?.hidden) this.connect({ automatic: true });
+        if (signal.aborted || globalThis.document?.hidden) return;
+        if (this.lastAdvertisementAt !== undefined) {
+          // A cube can continue advertising after we release GATT. Wait for a new burst.
+          const now = Date.now();
+          const quietMs = now - this.lastAdvertisementAt;
+          this.lastAdvertisementAt = now;
+          if (quietMs < wakeQuietMs) return;
+        }
+        this.connect({ automatic: true });
       }, { signal });
       await device.watchAdvertisements({ signal });
     } catch {
@@ -116,6 +125,7 @@ export class BluetoothCube {
     this.stopWatching();
     const permitted = pick ? undefined : this.cachedDevice;
     if (automatic && !permitted) return;
+    this.lastAdvertisementAt = undefined;
     this.resumeId = undefined;
     const attempt = this.attempt = Symbol();
     this.status = 'connecting';
@@ -185,7 +195,9 @@ export class BluetoothCube {
       }
       // Setup can fail after GATT connects but before the library returns a connection.
       if (!this.conn && selectedDevice?.gatt?.connected) selectedDevice.gatt.disconnect();
-      await this.disconnect(true, resume && !retryAddress);
+      const wakeFailed = automatic && !resume && error.name === 'NetworkError';
+      if (wakeFailed) this.lastAdvertisementAt = Date.now();
+      await this.disconnect(true, (resume || wakeFailed) && !retryAddress);
       if (retryAddress) this.callbacks.error('The cube did not respond with the saved address. Wake it and reconnect to try a fresh address.');
       else if (permitted) {
         this.callbacks.error('Wake the cube and try Reconnect Cube. Use “Choose cube…” to open the Bluetooth picker.');
@@ -222,9 +234,10 @@ export class BluetoothCube {
   resetIdleTimer() {
     clearTimeout(this.idleTimer);
     this.idleTimer = setTimeout(() => {
-      this.disconnect();
+      this.lastAdvertisementAt = Date.now();
+      this.disconnect(true, true);
       this.callbacks.disconnect();
-      this.callbacks.error(`Cube disconnected after ${idleMinutes} minutes without a turn. Reconnect when you’re ready.`);
+      this.callbacks.error(`Cube disconnected after ${idleMinutes} minutes without a turn. Turn the white face to wake it, or choose Reconnect Cube.`);
     }, idleMinutes * 60_000);
   }
 

@@ -22,7 +22,7 @@ After pairing, turn the white face to wake your cube. Click **Reconnect Cube** o
 
 When you reload a connected tab, cubeee tries to resume that cube as soon as the browser returns its saved permission. If Chrome on Android asks you to select the cube after each reload, enable **Use the new permissions backend for Web Bluetooth** at `chrome://flags/#enable-web-bluetooth-new-permissions-backend`, relaunch Chrome, and select the cube once more.
 
-The Bluetooth button shows the cube’s reported battery percentage on every page. After disconnecting, it shows the last reading saved in this browser. Manual disconnect and the 15-minute idle timeout pause automatic reconnect for the rest of the page session. Click **Reconnect Cube** or press **Space** to resume.
+The Bluetooth button shows the cube’s reported battery percentage on every page. After disconnecting, it shows the last reading saved in this browser. After 15 minutes without a face turn, cubeee disconnects. With automatic reconnect enabled, leave the tab visible and turn the white face when you return. Choosing **Disconnect** manually pauses automatic reconnect until you click **Reconnect Cube** or press **Space** in that tab.
 
 **Sync state** reads the sticker positions stored in the GAN. If your physical cube is fully solved and the live view still shows a scramble after syncing, open **GAN i4 connected → Calibrate solved cube…**. Check all six faces, choose **My cube is solved**, and keep the cube still while cubeee verifies the new position.
 
