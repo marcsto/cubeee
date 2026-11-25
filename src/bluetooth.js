@@ -2,7 +2,7 @@ import { ganMove, ganOrientation, ganState, validFacelets } from './cube.js';
 
 const batteryKey = 'cubeee:lastBattery';
 const deviceKey = 'cubeee:lastCubeId';
-const idleTimeout = 60 * 60_000;
+const idleMinutes = 15;
 const batteryRefresh = 60_000;
 const batteryRetry = 5000;
 const validLevel = level => Number.isInteger(level) && level >= 0 && level <= 100;
@@ -200,8 +200,8 @@ export class BluetoothCube {
     this.idleTimer = setTimeout(() => {
       this.disconnect();
       this.callbacks.disconnect();
-      this.callbacks.error('Cube disconnected after 1 hour without a turn. Reconnect when you’re ready.');
-    }, idleTimeout);
+      this.callbacks.error(`Cube disconnected after ${idleMinutes} minutes without a turn. Reconnect when you’re ready.`);
+    }, idleMinutes * 60_000);
   }
 
   async requestState(connection, resetToSolved) {

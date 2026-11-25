@@ -64,12 +64,12 @@ test('calibration requires the GAN to report solved and permits a retry', async 
   assert.equal((await cube.resync({ resetToSolved: true })).isSolved(), true);
 });
 
-test('each physical turn starts a new one-hour idle timeout', async t => {
+test('each physical turn starts a new 15-minute idle timeout', async t => {
   const { cube, turn } = await connectCube(t);
-  t.mock.timers.tick(59 * 60_000);
+  t.mock.timers.tick(14 * 60_000);
   assert.equal(cube.status, 'connected');
   turn('F');
-  t.mock.timers.tick(60 * 60_000 - 1);
+  t.mock.timers.tick(15 * 60_000 - 1);
   assert.equal(cube.status, 'connected');
   t.mock.timers.tick(1);
   assert.equal(cube.status, 'disconnected');
@@ -103,7 +103,7 @@ test('restore the preferred cube, reconnect once on advertisement, and respect i
   assert.equal(signal.aborted, true);
   assert.deepEqual(selections, [undefined, device]);
   assert.equal(cube.status, 'connected');
-  t.mock.timers.tick(60 * 60_000);
+  t.mock.timers.tick(15 * 60_000);
   await new Promise(resolve => setImmediate(resolve));
   advertise();
   assert.equal(cube.status, 'disconnected');

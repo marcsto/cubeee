@@ -1,3 +1,3 @@
 # Publishing changes
 
-After finishing and verifying changes, commit them and push to `origin/main` so GitHub Pages publishes them to https://marc.ai/cubeee/. Confirm that the deployment succeeds.
+Publish verified changes automatically unless the user asks to skip publishing. To publish, commit the changes, push to `origin/main`, and confirm that GitHub Pages deploys them to https://marc.ai/cubeee/.
