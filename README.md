@@ -18,7 +18,9 @@ Solutions open by default during pair practice. As you turn the cube, each solut
 
 The suggested solutions include algorithms from the [CubeSkills F2L guide](https://www.cubeskills.com/uploads/pdf/tutorials/f2l.pdf) by Feliks Zemdegs and Andy Klise. They cover all 41 standard cases and appear in Cross + F2L review when they solve the split and preserve the completed pieces. Opening U turns are aligned to the current setup.
 
-The Bluetooth button shows the cube’s reported battery percentage on every page. After disconnecting, it shows the last reading saved in this browser. Cubeee disconnects after one hour without a face turn. To resume, turn the white face to wake the cube and choose **Connect GAN i4**.
+After pairing, turn the white face to wake your cube. Click **Reconnect Cube** or press **Space** to connect directly while the tab stays open. Browsers with `getDevices()` can restore that shortcut after a reload. If the browser also supports `watchAdvertisements()`, cubeee reconnects automatically when the cube advertises while the tab is visible. Other browsers need the picker again after a reload. Use **Choose cube…** to select a different cube or renew permission.
+
+The Bluetooth button shows the cube’s reported battery percentage on every page. After disconnecting, it shows the last reading saved in this browser. Manual disconnect and the one-hour idle timeout pause automatic reconnect for the rest of the page session. Click **Reconnect Cube** or press **Space** to resume.
 
 **Sync state** reads the sticker positions stored in the GAN. If your physical cube is fully solved and the live view still shows a scramble after syncing, open **GAN i4 connected → Calibrate solved cube…**. Check all six faces, choose **My cube is solved**, and keep the cube still while cubeee verifies the new position.
 

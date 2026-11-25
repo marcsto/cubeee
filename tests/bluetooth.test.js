@@ -3,11 +3,12 @@ import test from 'node:test';
 import { BluetoothCube } from '../src/bluetooth.js';
 import { ganState, solved } from '../src/cube.js';
 
-async function connectCube(t) {
+async function connectCube(t, adapter = {}) {
   t.mock.timers.enable({ apis: ['setTimeout', 'Date'] });
-  Object.defineProperty(navigator, 'bluetooth', { value: {}, configurable: true });
+  Object.defineProperty(navigator, 'bluetooth', { value: adapter, configurable: true });
   t.after(() => { delete navigator.bluetooth; });
-  const device = { state: solved.clone().move('B R U'), serial: 24, acceptsReset: true };
+  const device = Object.assign(new EventTarget(), { name: 'GAN i4', id: 'paired', state: solved.clone().move('B R U'), serial: 24, acceptsReset: true });
+  const selections = [];
   const commands = [];
   let emit;
   const connection = {
@@ -19,10 +20,14 @@ async function connectCube(t) {
     },
     async disconnect() {},
   };
-  const cube = new BluetoothCube(async () => connection, {
+  const cube = new BluetoothCube(async (address, permitted) => {
+    selections.push(permitted);
+    await address(permitted ?? device);
+    return connection;
+  }, {
     sync(state) { device.displayed = state.clone(); },
     turn(move) { device.displayed.move(move); },
-    change() {}, disconnect() {}, error() {},
+    change() {}, disconnect() {}, error() {}, async addressStore() {},
   });
   await cube.connect();
   t.after(() => cube.disconnect());
@@ -30,7 +35,7 @@ async function connectCube(t) {
     device.state.move(move);
     emit({ type: 'MOVE', move, serial: ++device.serial });
   };
-  return { cube, device, commands, turn };
+  return { cube, device, commands, turn, selections, drop: () => emit({ type: 'DISCONNECT' }) };
 }
 
 test('sync reads the GAN, solved calibration corrects its baseline, and turns stay aligned', async t => {
@@ -68,4 +73,59 @@ test('each physical turn starts a new one-hour idle timeout', async t => {
   assert.equal(cube.status, 'connected');
   t.mock.timers.tick(1);
   assert.equal(cube.status, 'disconnected');
+});
+
+test('a tab can reconnect directly without getDevices, and can explicitly open the picker', async t => {
+  const { cube, device, selections, drop } = await connectCube(t);
+  drop();
+  await cube.connect();
+  assert.deepEqual(selections, [undefined, device]);
+  await cube.disconnect();
+  await cube.connect({ pick: true });
+  assert.equal(selections[2], undefined);
+  assert.equal(cube.status, 'connected');
+});
+
+test('restore the preferred cube, reconnect once on advertisement, and respect intentional disconnects', async t => {
+  const adapter = {};
+  const { cube, device, selections, drop } = await connectCube(t, adapter);
+  const other = { name: 'GAN i4', id: 'other' };
+  adapter.getDevices = async () => [other, device];
+  let signal;
+  device.watchAdvertisements = async options => { signal = options.signal; };
+  drop();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(signal.aborted, false);
+  const advertise = () => device.dispatchEvent(new Event('advertisementreceived'));
+  advertise();
+  advertise();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(signal.aborted, true);
+  assert.deepEqual(selections, [undefined, device]);
+  assert.equal(cube.status, 'connected');
+  t.mock.timers.tick(60 * 60_000);
+  await new Promise(resolve => setImmediate(resolve));
+  advertise();
+  assert.equal(cube.status, 'disconnected');
+  assert.equal(selections.length, 2);
+  await cube.connect();
+  await cube.disconnect();
+  advertise();
+  assert.equal(selections.length, 3);
+});
+
+test('a denied advertisement watch leaves manual reconnect available, and revoked permission releases the cache', async t => {
+  const adapter = {};
+  const { cube, device, selections, drop } = await connectCube(t, adapter);
+  adapter.getDevices = async () => [device];
+  device.watchAdvertisements = async () => { throw new Error('unavailable'); };
+  drop();
+  await new Promise(resolve => setImmediate(resolve));
+  device.dispatchEvent(new Event('advertisementreceived'));
+  assert.equal(selections.length, 1);
+  await cube.connect();
+  assert.equal(selections[1], device);
+  adapter.getDevices = async () => [];
+  await cube.disconnect();
+  assert.equal(cube.cachedDevice, undefined);
 });

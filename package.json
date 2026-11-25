@@ -4,6 +4,7 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
+    "postinstall": "patch-package --error-on-fail",
     "test": "node --test",
     "dev": "vite --host 127.0.0.1",
     "build": "vite build",
@@ -19,6 +20,7 @@
     "lucide": "1.73.0"
   },
   "devDependencies": {
+    "patch-package": "8.0.1",
     "vite": "^6.4.6"
   }
 }

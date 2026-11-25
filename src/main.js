@@ -168,10 +168,21 @@ function resetAfterDisconnect() {
 }
 
 window.addEventListener('pagehide', () => {
-  if (bluetooth.status === 'connected') {
-    bluetooth.disconnect();
+  bluetooth.suspended = true;
+  bluetooth.stopWatching();
+  if (bluetooth.status !== 'disconnected') {
+    bluetooth.disconnect(true, true);
     resetAfterDisconnect();
   }
+});
+window.addEventListener('pageshow', event => {
+  if (!event.persisted) return;
+  bluetooth.suspended = false;
+  bluetooth.prepareReconnect();
+});
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) bluetooth.stopWatching();
+  else bluetooth.prepareReconnect();
 });
 
 function interruptVirtualPractice(message) {
@@ -370,7 +381,8 @@ function go(destination, practiceItem = practiceTrainer.item) {
 function renderConnection() {
   const virtual = usingVirtualCube();
   const awaitingState = bluetooth.awaitingState;
-  const status = `${bluetooth.status}:${virtual}:${awaitingState}`;
+  const canReconnect = Boolean(bluetooth.cachedDevice);
+  const status = `${bluetooth.status}:${virtual}:${awaitingState}:${canReconnect}`;
   const statusChanged = renderedCubeStatus !== status;
   const batteryLabel = bluetooth.batteryLabel;
   if (renderedBattery !== batteryLabel) {
@@ -382,7 +394,8 @@ function renderConnection() {
   const connected = bluetooth.status === 'connected';
   const connecting = bluetooth.status === 'connecting';
   const label = $('#connect-label');
-  label.textContent = connected ? 'GAN i4 connected' : connecting ? 'Connecting…' : 'Connect GAN i4';
+  label.textContent = connected ? 'GAN i4 connected' : connecting ? 'Connecting…' : canReconnect ? 'Reconnect Cube' : 'Connect GAN i4';
+  $('#connect-button').title = !connected && canReconnect ? 'Wake the cube, then click or press Space to reconnect' : '';
   $('#connect-button').classList.toggle('connected', connected);
   $('#connect-button').disabled = connecting;
   $('.live-badge').classList.toggle('connected', connected && !awaitingState);
@@ -395,7 +408,7 @@ function renderConnection() {
     : `<span class="input-caption">${icon('Keyboard')} Cube controls</span><div class="keys" aria-label="Turn the virtual cube">
        ${[...'URFDLB'].map(face => `<button class="key" data-turn="${face}" aria-label="Turn ${faceNames[face]} face">${face}</button>`).join('')}
        <span class="key-separator"></span><button class="key" data-modifier="prime" title="Counterclockwise (Shift)" aria-label="Counterclockwise modifier" aria-pressed="${modifier === "'"}">′</button><button class="key" data-modifier="double" title="Half turn (Alt)" aria-label="Half-turn modifier" aria-pressed="${modifier === '2'}">2</button>
-       </div><button class="settings-link" data-action="help" title="Keyboard shortcuts" aria-label="Keyboard shortcuts">${icon('CircleHelp')}</button>`;
+       </div>${canReconnect && !connecting ? '<button class="settings-link" data-action="pick-cube">Choose cube…</button>' : ''}<button class="settings-link" data-action="help" title="Keyboard shortcuts" aria-label="Keyboard shortcuts">${icon('CircleHelp')}</button>`;
   hydrate($('#cube-input'));
   updateCubeOrientation();
   return statusChanged;
@@ -1009,7 +1022,7 @@ function askAddress(deviceName) {
 
 function showHelp() {
   openDialog('Cube controls', `<p>Hold the training cube with white down and green facing you. Keep this orientation as you follow the setup.</p><ul>
-    <li>To wake the GAN i4, turn its white face. Open this site in Chrome or Edge and choose <strong>Connect GAN i4</strong>.</li>
+    <li>Turn the white face to wake the GAN i4. Choose <strong>Connect GAN i4</strong> to pair. When <strong>Reconnect Cube</strong> appears, click it or press Space. Supported browsers also reconnect when the cube advertises.</li>
     <li>Choose <strong>Virtual cube</strong> in F2L Practice to load each case on screen. Watch the screen and use your connected cube to turn.</li>
     <li>In the Cross + F2L breakdown, select a pair and choose <strong>Practice this pair</strong>. Virtual cube loads its original position immediately. After solving it, turn the top layer to retry; left and right turns keep you on the same pair. Turn off Virtual cube for guided setup on your physical cube.</li>
     <li>Use <strong>Rotation tracking</strong> to turn gyroscope tracking on or off. To level the view, hold the cube flat with white down and green facing you, then choose <strong>Align view</strong>.</li>
@@ -1299,6 +1312,7 @@ const action = {
       bluetooth.connect();
     }
   },
+  'pick-cube': () => bluetooth.connect({ pick: true }),
   disconnect: () => {
     bluetooth.disconnect();
     dialog.close();
@@ -1402,7 +1416,12 @@ document.addEventListener('change', event => {
 });
 
 document.addEventListener('keydown', event => {
-  if (dialog.open || bluetooth.status === 'connected' || event.repeat || event.ctrlKey || event.metaKey || /^(INPUT|TEXTAREA|SELECT)$/.test(event.target.tagName)) return;
+  if (dialog.open || bluetooth.status !== 'disconnected' || event.defaultPrevented || event.repeat || event.ctrlKey || event.metaKey || event.target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(event.target.tagName)) return;
+  if (event.code === 'Space' && !event.altKey && !event.shiftKey && !event.target.closest('button, a, summary, [role="button"]')) {
+    event.preventDefault();
+    bluetooth.connect();
+    return;
+  }
   const key = event.key.toUpperCase();
   if (/^[URFDLB]$/.test(key)) {
     event.preventDefault();
@@ -1457,3 +1476,4 @@ renderConnection();
 renderRecent();
 startPractice(order.group ? order.next() : cases[0]);
 const accountReady = activity.connect(firebaseConfig);
+bluetooth.prepareReconnect();
