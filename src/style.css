@@ -50,6 +50,8 @@ svg { width: 18px; height: 18px; }
 .button.ghost { color: var(--muted); background: transparent; border-color: var(--edge); }
 .button.ghost:hover:enabled { color: var(--ink); background: #242932; }
 .connect { min-height: 38px; white-space: nowrap; }
+.connect-details { display: grid; gap: 2px; text-align: left; line-height: 1.1; }
+#cube-battery { font-size: 10px; font-weight: 650; font-variant-numeric: tabular-nums; }
 .account-button { min-height: 38px; white-space: nowrap; }
 .connect.connected { color: var(--green); border-color: #395a4c; background: #20332b; }
 .connect.connected:hover:enabled { background: #284438; }

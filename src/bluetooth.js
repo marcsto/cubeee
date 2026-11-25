@@ -1,6 +1,12 @@
 import { connectGanCube } from 'gan-web-bluetooth';
 import { ganMove, ganOrientation, ganState, validFacelets } from './cube.js';
 
+const batteryKey = 'cubeee:lastBattery';
+const idleTimeout = 10 * 60_000;
+const batteryRefresh = 60_000;
+const batteryRetry = 5000;
+const validLevel = level => Number.isInteger(level) && level >= 0 && level <= 100;
+
 export function normalizeAddress(value) {
   if (typeof value !== 'string') return '';
   const compact = value.trim().replace(/[:\s-]/g, '');
@@ -29,6 +35,16 @@ export class BluetoothCube {
 
   constructor(callbacks) {
     this.callbacks = callbacks;
+    try {
+      const saved = JSON.parse(localStorage.getItem(batteryKey));
+      if (saved?.deviceId && validLevel(saved.level)) this.lastBattery = saved;
+    } catch { /* Storage can be disabled. */ }
+  }
+
+  get batteryLabel() {
+    if (validLevel(this.battery)) return `Battery ${this.battery}%`;
+    if (this.lastBattery) return `${this.lastBattery.level}% last seen`;
+    return 'Battery —';
   }
 
   get awaitingState() { return this.status === 'connected' && this.lastSerial === null; }
@@ -57,6 +73,12 @@ export class BluetoothCube {
       });
       const connection = this.conn;
       this.name = connection.deviceName || 'GAN i4';
+      this.deviceId = deviceId;
+      if (this.lastBattery && this.lastBattery.deviceId !== deviceId) {
+        this.lastBattery = undefined;
+        try { localStorage.removeItem(batteryKey); } catch { /* Storage can be disabled. */ }
+        this.callbacks.change();
+      }
       this.sub = connection.events$.subscribe(event => this.handle(event));
       await this.resync();
       if (this.conn !== connection) return;
@@ -70,7 +92,10 @@ export class BluetoothCube {
             .catch(() => this.callbacks.error('The cube is connected. Its Bluetooth address could not sync to your account.'));
         }
       }
-      connection.sendCubeCommand({ type: 'REQUEST_BATTERY' }).catch(() => {});
+      this.requestBattery();
+      this.batteryRetryTimer = setTimeout(() => {
+        if (this.battery === undefined) this.requestBattery();
+      }, batteryRetry);
     } catch (error) {
       const retryAddress = this.conn && usedSavedAddress && error.name === 'TimeoutError';
       if (retryAddress) {
@@ -92,6 +117,25 @@ export class BluetoothCube {
     } finally {
       this.syncing = null;
     }
+  }
+
+  requestBattery() {
+    if (!this.conn || this.syncing || this.batteryRequest) return;
+    this.nextBatteryRequest = Date.now() + (this.battery === undefined ? batteryRetry : batteryRefresh);
+    const request = this.conn.sendCubeCommand({ type: 'REQUEST_BATTERY' });
+    this.batteryRequest = request;
+    request.catch(() => {}).finally(() => {
+      if (this.batteryRequest === request) this.batteryRequest = null;
+    });
+  }
+
+  resetIdleTimer() {
+    clearTimeout(this.idleTimer);
+    this.idleTimer = setTimeout(() => {
+      this.disconnect();
+      this.callbacks.disconnect();
+      this.callbacks.error('Cube disconnected after 10 minutes without a turn. Reconnect when you’re ready.');
+    }, idleTimeout);
   }
 
   async requestState() {
@@ -119,12 +163,14 @@ export class BluetoothCube {
       const turnsSkipped = wasConnected && serial !== this.lastSerial;
       this.status = 'connected';
       this.lastSerial = serial;
+      if (!wasConnected) this.resetIdleTimer();
       this.callbacks.sync(cube, !wasConnected, turnsSkipped);
       this.waiting?.(null, cube);
       this.callbacks.change();
     } else if (event.type === 'MOVE' && this.status === 'connected') {
       const serial = event.serial & 0xff;
       if (this.awaitingState || serial === this.lastSerial) return;
+      this.resetIdleTimer();
       if (serial !== ((this.lastSerial + 1) & 0xff)) {
         this.lastSerial = null;
         this.callbacks.missedTurn();
@@ -135,19 +181,27 @@ export class BluetoothCube {
       }
       this.lastSerial = serial;
       this.callbacks.turn(ganMove(event.move), event.localTimestamp ?? event.timestamp, event.cubeTimestamp);
+      if (Date.now() >= this.nextBatteryRequest) this.requestBattery();
     } else if (event.type === 'GYRO') {
       const orientation = ganOrientation(event.quaternion);
       if (!orientation) return;
       this.orientation = orientation;
       this.callbacks.orientation();
-    } else if (event.type === 'BATTERY') {
+    } else if (event.type === 'BATTERY' && validLevel(event.batteryLevel)) {
+      clearTimeout(this.batteryRetryTimer);
+      this.nextBatteryRequest = Date.now() + batteryRefresh;
       this.battery = event.batteryLevel;
+      this.lastBattery = { deviceId: this.deviceId, level: this.battery };
+      try { localStorage.setItem(batteryKey, JSON.stringify(this.lastBattery)); } catch { /* Storage can be disabled. */ }
       this.callbacks.change();
     }
   }
 
   async disconnect(close = true) {
     const connection = this.conn;
+    clearTimeout(this.idleTimer);
+    clearTimeout(this.batteryRetryTimer);
+    this.batteryRequest = null;
     this.sub?.unsubscribe();
     this.conn = null;
     this.status = 'disconnected';

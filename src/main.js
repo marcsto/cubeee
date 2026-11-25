@@ -155,6 +155,7 @@ const bluetooth = new BluetoothCube({
 });
 
 function resetAfterDisconnect() {
+  if (dialog.open && $('#device-name')) dialog.close();
   practiceGestures.reset();
   if (mode === 'full') {
     full.interrupt('The cube disconnected. Reconnect or start a new attempt in virtual mode.');
@@ -164,6 +165,13 @@ function resetAfterDisconnect() {
     interruptVirtualPractice('The Bluetooth cube disconnected. Reconnect or restart with the on-screen controls.');
   } else startPractice(trainer.item);
 }
+
+window.addEventListener('pagehide', () => {
+  if (bluetooth.status === 'connected') {
+    bluetooth.disconnect();
+    resetAfterDisconnect();
+  }
+});
 
 function interruptVirtualPractice(message) {
   if (mode === 'full') {
@@ -363,9 +371,13 @@ function renderConnection() {
   const awaitingState = bluetooth.awaitingState;
   const status = `${bluetooth.status}:${virtual}:${awaitingState}`;
   const statusChanged = renderedCubeStatus !== status;
-  if (!statusChanged && renderedBattery === bluetooth.battery) return false;
+  const batteryLabel = bluetooth.batteryLabel;
+  if (renderedBattery !== batteryLabel) {
+    $('#cube-battery').textContent = batteryLabel;
+    renderedBattery = batteryLabel;
+  }
+  if (!statusChanged) return false;
   renderedCubeStatus = status;
-  renderedBattery = bluetooth.battery;
   const connected = bluetooth.status === 'connected';
   const connecting = bluetooth.status === 'connecting';
   const label = $('#connect-label');
@@ -378,7 +390,7 @@ function renderConnection() {
     ? virtual ? 'Bluetooth controls' : 'Synced via Bluetooth'
     : connecting ? 'Connecting' : 'On-screen controls';
   $('#cube-input').innerHTML = connected
-    ? `<span class="input-caption">${icon('Bluetooth')} Turn your physical cube</span><span class="history-meta">${Number.isFinite(bluetooth.battery) ? `${bluetooth.battery}% battery` : 'Bluetooth active'}</span><button class="settings-link" data-action="resync">${icon('RefreshCw')} Sync state</button>`
+    ? `<span class="input-caption">${icon('Bluetooth')} Turn your physical cube</span><button class="settings-link" data-action="resync">${icon('RefreshCw')} Sync state</button>`
     : `<span class="input-caption">${icon('Keyboard')} Cube controls</span><div class="keys" aria-label="Turn the virtual cube">
        ${[...'URFDLB'].map(face => `<button class="key" data-turn="${face}" aria-label="Turn ${faceNames[face]} face">${face}</button>`).join('')}
        <span class="key-separator"></span><button class="key" data-modifier="prime" title="Counterclockwise (Shift)" aria-label="Counterclockwise modifier" aria-pressed="${modifier === "'"}">′</button><button class="key" data-modifier="double" title="Half turn (Alt)" aria-label="Half-turn modifier" aria-pressed="${modifier === '2'}">2</button>

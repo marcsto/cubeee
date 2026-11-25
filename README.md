@@ -18,6 +18,8 @@ Solutions open by default during pair practice. As you turn the cube, each solut
 
 The suggested solutions include algorithms from the [CubeSkills F2L guide](https://www.cubeskills.com/uploads/pdf/tutorials/f2l.pdf) by Feliks Zemdegs and Andy Klise. They cover all 41 standard cases and appear in Cross + F2L review when they solve the split and preserve the completed pieces. Opening U turns are aligned to the current setup.
 
+The Bluetooth button shows the cube’s reported battery percentage on every page. After disconnecting, it shows the last reading saved in this browser. Cubeee disconnects after 10 minutes without a face turn. To resume, turn the white face to wake the cube and choose **Connect GAN i4**.
+
 ## History
 
 Sign in with Google to sync completed F2L practice, Cross + F2L solves, pair retries, preferred algorithms, and the practice filter across computers. In **History → Case practice**, pick a day to see which cases you completed and how many reps you did. Choose **Practice these cases** to review that day's set. Open **All attempts** to reopen a saved Cross + F2L solve or export a date range as JSON. Guest attempts and preferences stay in the browser. History shows the latest 250 attempts, and account exports can include older attempts.
