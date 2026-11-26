@@ -50,8 +50,8 @@ const dialog = $('#dialog');
 const activity = new ActivityHistory(activityChanged, showNotice);
 const order = new PracticeOrder(activity.preferences.order);
 let sessionCount = 0;
-let page = 'practice';
-let mode = 'practice';
+let page;
+let mode;
 let virtualPracticeIssue = '';
 let filter = libraryGroups[0];
 let modifier = '';
@@ -343,7 +343,7 @@ function renderSessionCount() {
     : `${sessionCount} ${sessionCount === 1 ? 'rep' : 'reps'}`;
 }
 
-function go(destination, practiceItem = practiceTrainer.item) {
+function go(destination, practiceItem) {
   if (page !== destination) startTopTurns = 0;
   page = destination;
   const [title, description] = {
@@ -352,6 +352,7 @@ function go(destination, practiceItem = practiceTrainer.item) {
     library: ['Case Library', 'Explore standard F2L cases and pairs trapped in the wrong slot.'],
     history: ['Training History', 'Review your practice, pair retries, and Cross + F2L solves.'],
   }[page];
+  document.title = `cubeee | ${title}`;
   $('#page-title').textContent = title;
   $('#page-description').textContent = description;
   document.querySelectorAll('.nav-item').forEach(button => {
@@ -369,7 +370,7 @@ function go(destination, practiceItem = practiceTrainer.item) {
     mode = 'practice';
     full.interrupt();
     trainer = practiceTrainer;
-    startPractice(practiceItem);
+    startPractice(practiceItem ?? (order.group && !order.history.length ? order.next() : practiceTrainer.item));
   }
   renderConnection();
   renderSessionCount();
@@ -1482,8 +1483,7 @@ function tick() {
 
 setInterval(tick, 33);
 hydrate();
-renderConnection();
 renderRecent();
-startPractice(order.group ? order.next() : cases[0]);
+go('full');
 const accountReady = activity.connect(firebaseConfig);
 bluetooth.prepareReconnect();

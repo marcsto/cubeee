@@ -11,17 +11,17 @@
       }
     </script>
     <link rel="icon" href="/favicon.png">
-    <title>cubeee | F2L Practice</title>
+    <title>cubeee | Cross + F2L</title>
   </head>
   <body>
     <header class="topbar">
       <div class="topbar-inner">
-        <button class="wordmark" data-view="practice" aria-label="cubeee home">
+        <button class="wordmark" data-view="full" aria-label="cubeee home">
           <span class="mark" data-icon="Box" aria-hidden="true"></span><span>cubeee</span>
         </button>
         <nav aria-label="Main navigation">
-          <button data-view="practice" class="nav-item" aria-current="page"><span data-icon="Target"></span>Practice</button>
-          <button data-view="full" class="nav-item"><span data-icon="Activity"></span>Cross + F2L</button>
+          <button data-view="full" class="nav-item" aria-current="page"><span data-icon="Activity"></span>Cross + F2L</button>
+          <button data-view="practice" class="nav-item"><span data-icon="Target"></span>Practice</button>
           <button data-view="library" class="nav-item"><span data-icon="LayoutGrid"></span>Case library</button>
           <button data-view="history" class="nav-item"><span data-icon="History"></span>History</button>
         </nav>
@@ -37,10 +37,10 @@
       <div class="hero">
         <div>
           <div class="eyebrow"><span class="eyebrow-rule"></span> SPEEDCUBE TRAINER</div>
-          <h1 id="page-title">F2L Practice</h1>
-          <p id="page-description">Train recognition and execution, one pair at a time.</p>
+          <h1 id="page-title">Cross + F2L</h1>
+          <p id="page-description">Solve the first two layers on your own and review each split.</p>
         </div>
-        <div class="session-badge" id="session-badge"><span class="session-icon" data-icon="Activity"></span><span><strong id="session-count">0 reps</strong><small>This session</small></span></div>
+        <div class="session-badge" id="session-badge"><span class="session-icon" data-icon="Activity"></span><span><strong id="session-count">0 solves</strong><small>This session</small></span></div>
       </div>
 
       <div class="workspace">
@@ -66,7 +66,7 @@
         <section class="panel work-panel" aria-label="Training workspace" id="work-panel"></section>
       </div>
 
-      <section class="panel recent-panel" aria-labelledby="recent-title" id="recent-panel"></section>
+      <section class="panel recent-panel" aria-labelledby="recent-title" id="recent-panel" hidden></section>
       <footer class="footer"><span>cubeee <span class="footer-dot">·</span> F2L practice</span><button class="text-button" data-action="help"><span data-icon="Keyboard"></span> Controls</button></footer>
     </main>
 
